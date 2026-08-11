@@ -5,9 +5,18 @@ import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { RedisModule } from './redis/redis.module';
+import { QueueModule } from './queue/queue.module';
 
 @Module({
-  imports: [PrismaModule, HealthModule, AuthModule, WebhooksModule],
+  imports: [
+    PrismaModule,
+    HealthModule,
+    AuthModule,
+    WebhooksModule,
+    RedisModule,
+    QueueModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
