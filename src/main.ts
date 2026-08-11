@@ -2,12 +2,13 @@ import { NestFactory } from '@nestjs/core';
 import { clerkMiddleware } from '@clerk/express';
 import { AppModule } from './app.module';
 import { RedisIoAdapter } from './realtime/redis-io.adapter';
+import { getCorsOrigins } from './config/cors';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.enableCors({
-    origin: process.env.CORS_ORIGIN?.split(',') ?? 'http://localhost:3000',
+    origin: getCorsOrigins(),
     credentials: true,
   });
 

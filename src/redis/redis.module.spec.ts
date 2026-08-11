@@ -9,6 +9,14 @@ describe('parseRedisUrl', () => {
     });
   });
 
+  it('decodes a percent-encoded password', () => {
+    expect(parseRedisUrl('redis://:sec%40ret@localhost:6380')).toEqual({
+      host: 'localhost',
+      port: 6380,
+      password: 'sec@ret',
+    });
+  });
+
   it('defaults to port 6379 when not specified', () => {
     expect(parseRedisUrl('redis://localhost')).toEqual({
       host: 'localhost',

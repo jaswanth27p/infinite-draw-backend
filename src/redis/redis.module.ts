@@ -8,7 +8,7 @@ export function parseRedisUrl(url: string) {
   return {
     host: parsed.hostname,
     port: Number(parsed.port || 6379),
-    password: parsed.password || undefined,
+    password: parsed.password ? decodeURIComponent(parsed.password) : undefined,
   };
 }
 
