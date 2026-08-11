@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { RedisModule } from './redis/redis.module';
 import { QueueModule } from './queue/queue.module';
+import { RealtimeModule } from './realtime/realtime.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { QueueModule } from './queue/queue.module';
     WebhooksModule,
     RedisModule,
     QueueModule,
+    RealtimeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
