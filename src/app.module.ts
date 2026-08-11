@@ -9,6 +9,7 @@ import { RedisModule } from './redis/redis.module';
 import { QueueModule } from './queue/queue.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { StorageModule } from './storage/storage.module';
+import { FilesModule } from './files/files.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { StorageModule } from './storage/storage.module';
     QueueModule,
     RealtimeModule,
     StorageModule,
+    FilesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
