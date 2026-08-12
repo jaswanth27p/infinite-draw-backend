@@ -90,4 +90,13 @@ export class StorageService implements OnModuleInit {
     });
     return getSignedUrl(this.client, command, { expiresIn: 900 });
   }
+
+  /**
+   * Path-style URL matching how the presigned PUT URL addresses the same
+   * object (forcePathStyle: true above) — callers should use this instead
+   * of deriving a "public" URL themselves from the presigned URL.
+   */
+  getPublicUrl(key: string): string {
+    return `${process.env.S3_ENDPOINT}/${this.bucket}/${key}`;
+  }
 }

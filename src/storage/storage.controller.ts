@@ -19,8 +19,11 @@ export class StorageController {
   @Post('presign')
   async presign(@Body() dto: PresignDto, @CurrentLocalUserId() ownerId: string) {
     await this.filesService.getOwned(dto.fileId, ownerId);
-    const key = `thumbnails/${dto.fileId}.png`;
+    // A distinct key per upload — a fixed `thumbnails/${fileId}.png` key
+    // would have every version's thumbnail overwrite the last one's.
+    const key = `thumbnails/${dto.fileId}/${Date.now()}.png`;
     const uploadUrl = await this.storageService.getPresignedUploadUrl(key, THUMBNAIL_CONTENT_TYPE);
-    return { uploadUrl };
+    const publicUrl = this.storageService.getPublicUrl(key);
+    return { uploadUrl, key, publicUrl };
   }
 }
