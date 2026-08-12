@@ -39,6 +39,12 @@ export class FileVersionsService {
     return this.prisma.fileVersion.findMany({
       where: { fileId },
       orderBy: { createdAt: 'desc' },
+      // The version-history panel only ever renders these fields — the
+      // full scene JSON (`data`) is large and only needed on restore, so
+      // don't ship it on every list call (which autosave was also
+      // triggering via query-key prefix invalidation before that was
+      // fixed on the frontend).
+      select: { id: true, name: true, thumbnailUrl: true, createdAt: true },
     });
   }
 

@@ -107,6 +107,20 @@ describe('FileVersionsService', () => {
     await expect(service.list('f1', 'owner_2')).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it('list selects only the fields the version-history panel needs, not the full scene JSON', async () => {
+    const service = await buildService();
+    filesServiceMock.getOwned.mockResolvedValue({ id: 'f1' });
+    prismaMock.fileVersion.findMany.mockResolvedValue([]);
+
+    await service.list('f1', 'owner_1');
+
+    expect(prismaMock.fileVersion.findMany).toHaveBeenCalledWith({
+      where: { fileId: 'f1' },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, name: true, thumbnailUrl: true, createdAt: true },
+    });
+  });
+
   it('restore copies the version\'s data into the file\'s currentData', async () => {
     const service = await buildService();
     filesServiceMock.getOwned.mockResolvedValue({ id: 'f1' });
