@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import {
   CreateBucketCommand,
   HeadBucketCommand,
+  PutBucketPolicyCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -33,6 +34,34 @@ export class StorageService implements OnModuleInit {
       }
       await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
     }
+    await this.applyThumbnailReadPolicy();
+  }
+
+  /**
+   * Scene JSON never lives in MinIO (Postgres only) — thumbnails are the
+   * only objects this app ever wants publicly readable, and only those
+   * under the `thumbnails/` prefix. This is declarative (a full policy
+   * document, not an incremental grant), so applying it on every
+   * `onModuleInit` is safe and idempotent.
+   */
+  private async applyThumbnailReadPolicy(): Promise<void> {
+    const policy = {
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Effect: 'Allow',
+          Principal: '*',
+          Action: ['s3:GetObject'],
+          Resource: [`arn:aws:s3:::${this.bucket}/thumbnails/*`],
+        },
+      ],
+    };
+    await this.client.send(
+      new PutBucketPolicyCommand({
+        Bucket: this.bucket,
+        Policy: JSON.stringify(policy),
+      }),
+    );
   }
 
   /**
