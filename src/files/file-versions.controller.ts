@@ -16,7 +16,7 @@ export class FileVersionsController {
     @CurrentLocalUserId() ownerId: string,
     @Body() dto: CreateVersionDto,
   ) {
-    return this.versionsService.save(fileId, ownerId, dto.name);
+    return this.versionsService.save(fileId, ownerId, dto.name, dto.thumbnailUrl);
   }
 
   @Get()

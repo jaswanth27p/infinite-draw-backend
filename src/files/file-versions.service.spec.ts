@@ -47,6 +47,27 @@ describe('FileVersionsService', () => {
     expect(prismaMock.file.update).not.toHaveBeenCalled();
   });
 
+  it('save uses a caller-supplied thumbnailUrl instead of the file\'s current one, when provided', async () => {
+    const service = await buildService();
+    filesServiceMock.getOwned.mockResolvedValue({
+      id: 'f1',
+      currentData: { elements: [] },
+      thumbnailUrl: 'old-thumb.png',
+    });
+    prismaMock.fileVersion.create.mockResolvedValue({ id: 'v1' });
+
+    await service.save('f1', 'owner_1', 'Before redesign', 'new-thumb.png');
+
+    expect(prismaMock.fileVersion.create).toHaveBeenCalledWith({
+      data: {
+        fileId: 'f1',
+        name: 'Before redesign',
+        data: { elements: [] },
+        thumbnailUrl: 'new-thumb.png',
+      },
+    });
+  });
+
   it('list rejects when the file isn\'t owned by the caller', async () => {
     const service = await buildService();
     filesServiceMock.getOwned.mockRejectedValue(new NotFoundException());

@@ -9,14 +9,14 @@ export class FileVersionsService {
     private readonly filesService: FilesService,
   ) {}
 
-  async save(fileId: string, ownerId: string, name: string) {
+  async save(fileId: string, ownerId: string, name: string, thumbnailUrl?: string) {
     const file = await this.filesService.getOwned(fileId, ownerId);
     return this.prisma.fileVersion.create({
       data: {
         fileId: file.id,
         name,
         data: file.currentData as object,
-        thumbnailUrl: file.thumbnailUrl,
+        thumbnailUrl: thumbnailUrl ?? file.thumbnailUrl,
       },
     });
   }
