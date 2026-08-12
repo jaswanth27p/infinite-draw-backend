@@ -11,7 +11,7 @@ export class FileVersionsService {
 
   async save(fileId: string, ownerId: string, name: string, thumbnailUrl?: string) {
     const file = await this.filesService.getOwned(fileId, ownerId);
-    return this.prisma.fileVersion.create({
+    const version = await this.prisma.fileVersion.create({
       data: {
         fileId: file.id,
         name,
@@ -19,6 +19,19 @@ export class FileVersionsService {
         thumbnailUrl: thumbnailUrl ?? file.thumbnailUrl,
       },
     });
+
+    // Write the caller-supplied thumbnail through to the File row so the
+    // /files list (FileCard) has something to render — this is the only
+    // path that ever sets File.thumbnailUrl on save. It deliberately never
+    // touches currentData: autosave remains the sole writer of that field.
+    if (thumbnailUrl) {
+      await this.prisma.file.update({
+        where: { id: file.id },
+        data: { thumbnailUrl },
+      });
+    }
+
+    return version;
   }
 
   async list(fileId: string, ownerId: string) {

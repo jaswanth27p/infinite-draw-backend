@@ -68,6 +68,38 @@ describe('FileVersionsService', () => {
     });
   });
 
+  it('save writes a caller-supplied thumbnailUrl through to the File row, without touching currentData', async () => {
+    const service = await buildService();
+    filesServiceMock.getOwned.mockResolvedValue({
+      id: 'f1',
+      currentData: { elements: [] },
+      thumbnailUrl: 'old-thumb.png',
+    });
+    prismaMock.fileVersion.create.mockResolvedValue({ id: 'v1' });
+
+    await service.save('f1', 'owner_1', 'Before redesign', 'new-thumb.png');
+
+    expect(prismaMock.file.update).toHaveBeenCalledTimes(1);
+    expect(prismaMock.file.update).toHaveBeenCalledWith({
+      where: { id: 'f1' },
+      data: { thumbnailUrl: 'new-thumb.png' },
+    });
+  });
+
+  it('save does not touch the File row at all when no thumbnailUrl is supplied', async () => {
+    const service = await buildService();
+    filesServiceMock.getOwned.mockResolvedValue({
+      id: 'f1',
+      currentData: { elements: [] },
+      thumbnailUrl: 'existing-thumb.png',
+    });
+    prismaMock.fileVersion.create.mockResolvedValue({ id: 'v1' });
+
+    await service.save('f1', 'owner_1', 'Before redesign');
+
+    expect(prismaMock.file.update).not.toHaveBeenCalled();
+  });
+
   it('list rejects when the file isn\'t owned by the caller', async () => {
     const service = await buildService();
     filesServiceMock.getOwned.mockRejectedValue(new NotFoundException());
