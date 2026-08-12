@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 import { getAuth } from '@clerk/express';
 import { LoadLocalUserGuard } from './load-local-user.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -36,12 +36,16 @@ describe('LoadLocalUserGuard', () => {
     });
   });
 
-  it('throws NotFoundException when no local User row exists yet', async () => {
+  it('throws ForbiddenException (not NotFoundException) when no local User row exists yet', async () => {
+    // A missing local User row means "the Clerk webhook hasn't synced this
+    // account yet", not "this resource doesn't exist" — conflating the two
+    // makes a new user's provisioning lag look like a 404 on every
+    // resource, indistinguishable from a genuinely missing file.
     mockedGetAuth.mockReturnValue({ userId: 'user_clerk_2' });
     prismaMock.user.findUnique.mockResolvedValue(null);
     const guard = new LoadLocalUserGuard(prismaMock as unknown as PrismaService);
     const { context } = createContext();
 
-    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
