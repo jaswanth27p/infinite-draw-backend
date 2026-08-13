@@ -90,8 +90,34 @@ export class FilesService {
     return null;
   }
 
-  listShared(_userId: string) {
-    return Promise.resolve([]);
+  listShared(userId: string) {
+    return this.prisma.share
+      .findMany({
+        where: { userId, file: { deletedAt: null } },
+        select: {
+          role: true,
+          file: {
+            select: {
+              id: true,
+              name: true,
+              thumbnailUrl: true,
+              updatedAt: true,
+              owner: { select: { name: true, email: true } },
+            },
+          },
+        },
+        orderBy: { file: { updatedAt: 'desc' } },
+      })
+      .then((shares) =>
+        shares.map((s) => ({
+          id: s.file.id,
+          name: s.file.name,
+          thumbnailUrl: s.file.thumbnailUrl,
+          updatedAt: s.file.updatedAt,
+          role: s.role,
+          owner: s.file.owner,
+        })),
+      );
   }
 
   async updateGeneralAccess(id: string, dto: UpdateGeneralAccessDto) {

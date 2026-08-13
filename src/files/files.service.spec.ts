@@ -13,6 +13,7 @@ describe('FilesService', () => {
     },
     share: {
       findUnique: jest.fn(),
+      findMany: jest.fn(),
     },
   };
 
@@ -216,6 +217,51 @@ describe('FilesService', () => {
         service.updateGeneralAccess('f1', { generalAccess: 'ANYONE' } as never),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.file.update).not.toHaveBeenCalled();
+    });
+  });
+
+  it('listShared returns files with an explicit Share for the caller, with role and owner info', async () => {
+    const service = await buildService();
+    prismaMock.share.findMany.mockResolvedValue([
+      {
+        role: 'EDITOR',
+        file: {
+          id: 'f9',
+          name: 'Shared file',
+          thumbnailUrl: null,
+          updatedAt: new Date('2026-01-01'),
+          owner: { name: 'Alice', email: 'alice@x.com' },
+        },
+      },
+    ]);
+
+    const result = await service.listShared('user_2');
+
+    expect(result).toEqual([
+      {
+        id: 'f9',
+        name: 'Shared file',
+        thumbnailUrl: null,
+        updatedAt: new Date('2026-01-01'),
+        role: 'EDITOR',
+        owner: { name: 'Alice', email: 'alice@x.com' },
+      },
+    ]);
+    expect(prismaMock.share.findMany).toHaveBeenCalledWith({
+      where: { userId: 'user_2', file: { deletedAt: null } },
+      select: {
+        role: true,
+        file: {
+          select: {
+            id: true,
+            name: true,
+            thumbnailUrl: true,
+            updatedAt: true,
+            owner: { select: { name: true, email: true } },
+          },
+        },
+      },
+      orderBy: { file: { updatedAt: 'desc' } },
     });
   });
 });
