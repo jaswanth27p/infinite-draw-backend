@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { GeneralAccess, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateFileDto } from './dto/update-file.dto';
+import { UpdateGeneralAccessDto } from './dto/update-general-access.dto';
 import { Role } from './role';
 
 const FILE_LIST_SELECT = {
@@ -93,7 +94,16 @@ export class FilesService {
     return Promise.resolve([]);
   }
 
-  updateGeneralAccess(_id: string, _dto: { generalAccess: string; generalAccessRole?: string }) {
-    throw new Error('not implemented — see Task 5');
+  async updateGeneralAccess(id: string, dto: UpdateGeneralAccessDto) {
+    if (dto.generalAccess === GeneralAccess.ANYONE && !dto.generalAccessRole) {
+      throw new BadRequestException('generalAccessRole is required when generalAccess is ANYONE');
+    }
+    return this.prisma.file.update({
+      where: { id },
+      data: {
+        generalAccess: dto.generalAccess,
+        generalAccessRole: dto.generalAccess === GeneralAccess.ANYONE ? dto.generalAccessRole! : null,
+      },
+    });
   }
 }

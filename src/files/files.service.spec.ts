@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FilesService } from './files.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -181,6 +181,41 @@ describe('FilesService', () => {
       expect(prismaMock.file.findFirst).toHaveBeenCalledWith({
         where: { id: 'missing', deletedAt: null },
       });
+    });
+  });
+
+  describe('updateGeneralAccess', () => {
+    it('sets generalAccess and generalAccessRole together when turning on ANYONE', async () => {
+      const service = await buildService();
+      prismaMock.file.update.mockResolvedValue({ id: 'f1', generalAccess: 'ANYONE', generalAccessRole: 'VIEWER' });
+
+      await service.updateGeneralAccess('f1', { generalAccess: 'ANYONE', generalAccessRole: 'VIEWER' } as never);
+
+      expect(prismaMock.file.update).toHaveBeenCalledWith({
+        where: { id: 'f1' },
+        data: { generalAccess: 'ANYONE', generalAccessRole: 'VIEWER' },
+      });
+    });
+
+    it('clears generalAccessRole to null when switching back to RESTRICTED', async () => {
+      const service = await buildService();
+      prismaMock.file.update.mockResolvedValue({ id: 'f1', generalAccess: 'RESTRICTED', generalAccessRole: null });
+
+      await service.updateGeneralAccess('f1', { generalAccess: 'RESTRICTED' } as never);
+
+      expect(prismaMock.file.update).toHaveBeenCalledWith({
+        where: { id: 'f1' },
+        data: { generalAccess: 'RESTRICTED', generalAccessRole: null },
+      });
+    });
+
+    it('throws BadRequestException when turning on ANYONE without a generalAccessRole', async () => {
+      const service = await buildService();
+
+      await expect(
+        service.updateGeneralAccess('f1', { generalAccess: 'ANYONE' } as never),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.file.update).not.toHaveBeenCalled();
     });
   });
 });

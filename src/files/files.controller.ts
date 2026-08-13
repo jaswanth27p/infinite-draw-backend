@@ -16,11 +16,7 @@ import { RequireRole } from './require-role.decorator';
 import { CurrentFileAccess, type FileAccess } from './current-file-access.decorator';
 import { FilesService } from './files.service';
 import { UpdateFileDto } from './dto/update-file.dto';
-
-// Temporary local type — Task 5 creates the real `UpdateGeneralAccessDto`
-// (with class-validator decorators) at `./dto/update-general-access.dto`
-// and this task's Step 9-b below swaps this import for the real one.
-type UpdateGeneralAccessDtoStub = { generalAccess: string; generalAccessRole?: string };
+import { UpdateGeneralAccessDto } from './dto/update-general-access.dto';
 
 @Controller('files')
 @UseGuards(ClerkAuthGuard, LoadLocalUserGuard)
@@ -58,7 +54,7 @@ export class FilesController {
   @Patch(':id/general-access')
   @UseGuards(FileAccessGuard)
   @RequireRole('OWNER')
-  generalAccess(@Param('id') id: string, @Body() dto: UpdateGeneralAccessDtoStub) {
+  generalAccess(@Param('id') id: string, @Body() dto: UpdateGeneralAccessDto) {
     return this.filesService.updateGeneralAccess(id, dto);
   }
 
