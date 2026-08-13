@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { FilesController } from '../files/files.controller';
 import { FileVersionsController } from '../files/file-versions.controller';
 import { StorageController } from '../storage/storage.controller';
+import { SharesController } from '../files/shares.controller';
 import { ClerkAuthGuard } from './clerk-auth.guard';
 import { LoadLocalUserGuard } from './load-local-user.guard';
 import { FileAccessGuard } from '../files/file-access.guard';
@@ -38,5 +39,17 @@ describe.each([
 
     expect(guards).toContain(FileAccessGuard);
     expect(role).toBe(expectedRole);
+  });
+});
+
+describe('SharesController guard wiring', () => {
+  it('is guarded by ClerkAuthGuard, LoadLocalUserGuard, and FileAccessGuard with an OWNER floor', () => {
+    const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA_KEY, SharesController) ?? [];
+    const role = Reflect.getMetadata(REQUIRE_ROLE_KEY, SharesController);
+
+    expect(guards).toContain(ClerkAuthGuard);
+    expect(guards).toContain(LoadLocalUserGuard);
+    expect(guards).toContain(FileAccessGuard);
+    expect(role).toBe('OWNER');
   });
 });
