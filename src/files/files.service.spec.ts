@@ -88,6 +88,20 @@ describe('FilesService', () => {
     );
   });
 
+  it('update writes the given fields without re-checking ownership (the caller is guard-gated)', async () => {
+    const service = await buildService();
+    prismaMock.file.update.mockResolvedValue({ id: 'f5', name: 'Renamed' });
+
+    const result = await service.update('f5', { name: 'Renamed' });
+
+    expect(result).toEqual({ id: 'f5', name: 'Renamed' });
+    expect(prismaMock.file.update).toHaveBeenCalledWith({
+      where: { id: 'f5' },
+      data: { name: 'Renamed' },
+    });
+    expect(prismaMock.file.findFirst).not.toHaveBeenCalled();
+  });
+
   it("softDelete sets deletedAt only for the owner's file", async () => {
     const service = await buildService();
     prismaMock.file.findFirst.mockResolvedValue({

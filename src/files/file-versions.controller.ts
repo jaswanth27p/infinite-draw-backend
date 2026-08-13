@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { LoadLocalUserGuard } from '../auth/load-local-user.guard';
-import { CurrentLocalUserId } from '../auth/current-local-user-id.decorator';
+import { FileAccessGuard } from './file-access.guard';
+import { RequireRole } from './require-role.decorator';
+import { CurrentFileAccess, type FileAccess } from './current-file-access.decorator';
 import { FileVersionsService } from './file-versions.service';
 import { CreateVersionDto } from './dto/create-version.dto';
 
@@ -11,25 +13,23 @@ export class FileVersionsController {
   constructor(private readonly versionsService: FileVersionsService) {}
 
   @Post()
-  save(
-    @Param('fileId') fileId: string,
-    @CurrentLocalUserId() ownerId: string,
-    @Body() dto: CreateVersionDto,
-  ) {
-    return this.versionsService.save(fileId, ownerId, dto.name, dto.thumbnailUrl);
+  @UseGuards(FileAccessGuard)
+  @RequireRole('EDITOR')
+  save(@CurrentFileAccess() access: FileAccess, @Body() dto: CreateVersionDto) {
+    return this.versionsService.save(access.file, dto.name, dto.thumbnailUrl);
   }
 
   @Get()
-  list(@Param('fileId') fileId: string, @CurrentLocalUserId() ownerId: string) {
-    return this.versionsService.list(fileId, ownerId);
+  @UseGuards(FileAccessGuard)
+  @RequireRole('VIEWER')
+  list(@Param('fileId') fileId: string) {
+    return this.versionsService.list(fileId);
   }
 
   @Post(':versionId/restore')
-  restore(
-    @Param('fileId') fileId: string,
-    @Param('versionId') versionId: string,
-    @CurrentLocalUserId() ownerId: string,
-  ) {
-    return this.versionsService.restore(fileId, versionId, ownerId);
+  @UseGuards(FileAccessGuard)
+  @RequireRole('EDITOR')
+  restore(@CurrentFileAccess() access: FileAccess, @Param('versionId') versionId: string) {
+    return this.versionsService.restore(access.file, versionId);
   }
 }

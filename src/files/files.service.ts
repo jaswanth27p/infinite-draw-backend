@@ -43,8 +43,7 @@ export class FilesService {
     return file;
   }
 
-  async update(id: string, ownerId: string, dto: UpdateFileDto) {
-    await this.getOwned(id, ownerId);
+  update(id: string, dto: UpdateFileDto) {
     return this.prisma.file.update({
       where: { id },
       data: dto as Prisma.FileUpdateInput,
@@ -88,5 +87,13 @@ export class FilesService {
       return { file, role: file.generalAccessRole };
     }
     return null;
+  }
+
+  listShared(_userId: string) {
+    return Promise.resolve([]);
+  }
+
+  updateGeneralAccess(_id: string, _dto: { generalAccess: string; generalAccessRole?: string }) {
+    throw new Error('not implemented — see Task 5');
   }
 }

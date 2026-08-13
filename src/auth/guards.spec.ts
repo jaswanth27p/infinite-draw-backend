@@ -4,13 +4,9 @@ import { FileVersionsController } from '../files/file-versions.controller';
 import { StorageController } from '../storage/storage.controller';
 import { ClerkAuthGuard } from './clerk-auth.guard';
 import { LoadLocalUserGuard } from './load-local-user.guard';
+import { FileAccessGuard } from '../files/file-access.guard';
+import { REQUIRE_ROLE_KEY } from '../files/require-role.decorator';
 
-// The plan's core security constraint is that every file/version/storage
-// endpoint sits behind both ClerkAuthGuard and LoadLocalUserGuard — enforced
-// today only by `@UseGuards(...)` decorators on each controller. Deleting one
-// of those decorators would leave every other test in the suite green, since
-// nothing else exercises the guard wiring itself. This reflects on the
-// controllers' guard metadata directly so that regression is caught here.
 const GUARDS_METADATA_KEY = '__guards__';
 
 describe.each([
@@ -23,5 +19,24 @@ describe.each([
 
     expect(guards).toContain(ClerkAuthGuard);
     expect(guards).toContain(LoadLocalUserGuard);
+  });
+});
+
+describe.each([
+  [FilesController, 'get', 'VIEWER'],
+  [FilesController, 'update', 'EDITOR'],
+  [FilesController, 'generalAccess', 'OWNER'],
+  [FileVersionsController, 'save', 'EDITOR'],
+  [FileVersionsController, 'list', 'VIEWER'],
+  [FileVersionsController, 'restore', 'EDITOR'],
+  [StorageController, 'presign', 'EDITOR'],
+] as const)('file-access floor on %s#%s', (Controller, methodName, expectedRole) => {
+  it(`requires FileAccessGuard and RequireRole('${expectedRole}')`, () => {
+    const handler = (Controller.prototype as Record<string, unknown>)[methodName];
+    const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA_KEY, handler as object) ?? [];
+    const role = Reflect.getMetadata(REQUIRE_ROLE_KEY, handler as object);
+
+    expect(guards).toContain(FileAccessGuard);
+    expect(role).toBe(expectedRole);
   });
 });
