@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateFileDto } from './dto/update-file.dto';
+import { Role } from './role';
 
 const FILE_LIST_SELECT = {
   id: true,
@@ -67,5 +68,25 @@ export class FilesService {
       where: { id },
       data: { deletedAt: null },
     });
+  }
+
+  async getAccess(fileId: string, userId: string): Promise<{ file: Awaited<ReturnType<typeof this.prisma.file.findFirst>> & object; role: Role } | null> {
+    const file = await this.prisma.file.findFirst({ where: { id: fileId, deletedAt: null } });
+    if (!file) {
+      return null;
+    }
+    if (file.ownerId === userId) {
+      return { file, role: 'OWNER' };
+    }
+    const share = await this.prisma.share.findUnique({
+      where: { fileId_userId: { fileId, userId } },
+    });
+    if (share) {
+      return { file, role: share.role };
+    }
+    if (file.generalAccess === 'ANYONE' && file.generalAccessRole) {
+      return { file, role: file.generalAccessRole };
+    }
+    return null;
   }
 }

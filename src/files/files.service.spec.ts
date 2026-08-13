@@ -11,6 +11,9 @@ describe('FilesService', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
     },
+    share: {
+      findUnique: jest.fn(),
+    },
   };
 
   async function buildService() {
@@ -101,6 +104,69 @@ describe('FilesService', () => {
     expect(prismaMock.file.update).toHaveBeenCalledWith({
       where: { id: 'f5' },
       data: { deletedAt: expect.any(Date) },
+    });
+  });
+
+  describe('getAccess', () => {
+    it('returns OWNER when the caller owns the file, without checking shares', async () => {
+      const service = await buildService();
+      prismaMock.file.findFirst.mockResolvedValue({ id: 'f1', ownerId: 'owner_1' });
+
+      const result = await service.getAccess('f1', 'owner_1');
+
+      expect(result).toEqual({ role: 'OWNER', file: { id: 'f1', ownerId: 'owner_1' } });
+      expect(prismaMock.share.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('returns the explicit Share role when one exists', async () => {
+      const service = await buildService();
+      prismaMock.file.findFirst.mockResolvedValue({ id: 'f1', ownerId: 'owner_1', generalAccess: 'RESTRICTED' });
+      prismaMock.share.findUnique.mockResolvedValue({ role: 'EDITOR' });
+
+      const result = await service.getAccess('f1', 'user_2');
+
+      expect(result).toEqual({ role: 'EDITOR', file: expect.objectContaining({ id: 'f1' }) });
+      expect(prismaMock.share.findUnique).toHaveBeenCalledWith({
+        where: { fileId_userId: { fileId: 'f1', userId: 'user_2' } },
+      });
+    });
+
+    it('falls back to generalAccessRole when no explicit share exists and generalAccess is ANYONE', async () => {
+      const service = await buildService();
+      prismaMock.file.findFirst.mockResolvedValue({
+        id: 'f1',
+        ownerId: 'owner_1',
+        generalAccess: 'ANYONE',
+        generalAccessRole: 'VIEWER',
+      });
+      prismaMock.share.findUnique.mockResolvedValue(null);
+
+      const result = await service.getAccess('f1', 'user_3');
+
+      expect(result).toEqual({ role: 'VIEWER', file: expect.objectContaining({ id: 'f1' }) });
+    });
+
+    it('returns null when there is no share and generalAccess is RESTRICTED', async () => {
+      const service = await buildService();
+      prismaMock.file.findFirst.mockResolvedValue({
+        id: 'f1',
+        ownerId: 'owner_1',
+        generalAccess: 'RESTRICTED',
+        generalAccessRole: null,
+      });
+      prismaMock.share.findUnique.mockResolvedValue(null);
+
+      await expect(service.getAccess('f1', 'user_4')).resolves.toBeNull();
+    });
+
+    it('returns null when the file does not exist or is soft-deleted', async () => {
+      const service = await buildService();
+      prismaMock.file.findFirst.mockResolvedValue(null);
+
+      await expect(service.getAccess('missing', 'user_1')).resolves.toBeNull();
+      expect(prismaMock.file.findFirst).toHaveBeenCalledWith({
+        where: { id: 'missing', deletedAt: null },
+      });
     });
   });
 });
