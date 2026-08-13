@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { FileAccessGuard } from './file-access.guard';
 import { FilesService } from './files.service';
 import { REQUIRE_ROLE_KEY } from './require-role.decorator';
+import { ALLOW_DELETED_KEY } from './allow-deleted.decorator';
 
 function buildContext(overrides: {
   params?: Record<string, string>;
@@ -47,7 +48,7 @@ describe('FileAccessGuard', () => {
     } as never;
 
     await expect(buildGuard().canActivate(context)).resolves.toBe(true);
-    expect(filesServiceMock.getAccess).toHaveBeenCalledWith('f1', 'user_1');
+    expect(filesServiceMock.getAccess).toHaveBeenCalledWith('f1', 'user_1', expect.any(Object));
     expect(request.fileAccess).toEqual({ file: { id: 'f1' }, role: 'OWNER' });
   });
 
@@ -62,7 +63,7 @@ describe('FileAccessGuard', () => {
     } as never;
 
     await expect(buildGuard().canActivate(context)).resolves.toBe(true);
-    expect(filesServiceMock.getAccess).toHaveBeenCalledWith('f2', 'user_1');
+    expect(filesServiceMock.getAccess).toHaveBeenCalledWith('f2', 'user_1', expect.any(Object));
   });
 
   it('throws NotFoundException when getAccess returns null', async () => {
@@ -104,6 +105,36 @@ describe('FileAccessGuard', () => {
     await expect(buildGuard().canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('throws NotFoundException without calling getAccess when fileId is absent from both params and body', async () => {
+    reflectorMock.getAllAndOverride.mockReturnValue('VIEWER');
+    const request: Record<string, unknown> = { params: {}, body: {}, localUserId: 'user_1' };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => request }),
+      getHandler: () => ({}),
+      getClass: () => ({}),
+    } as never;
+
+    await expect(buildGuard().canActivate(context)).rejects.toBeInstanceOf(NotFoundException);
+    expect(filesServiceMock.getAccess).not.toHaveBeenCalled();
+  });
+
+  it('throws NotFoundException without calling getAccess when body.fileId is not a string (e.g. an injected Prisma filter object)', async () => {
+    reflectorMock.getAllAndOverride.mockReturnValue('EDITOR');
+    const request: Record<string, unknown> = {
+      params: {},
+      body: { fileId: { not: 'x' } },
+      localUserId: 'user_1',
+    };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => request }),
+      getHandler: () => ({}),
+      getClass: () => ({}),
+    } as never;
+
+    await expect(buildGuard().canActivate(context)).rejects.toBeInstanceOf(NotFoundException);
+    expect(filesServiceMock.getAccess).not.toHaveBeenCalled();
+  });
+
   it('reads REQUIRE_ROLE_KEY via getAllAndOverride so class-level and method-level decorators both work', async () => {
     filesServiceMock.getAccess.mockResolvedValue({ file: { id: 'f1' }, role: 'OWNER' });
     reflectorMock.getAllAndOverride.mockReturnValue('OWNER');
@@ -119,5 +150,39 @@ describe('FileAccessGuard', () => {
     await buildGuard().canActivate(context);
 
     expect(reflectorMock.getAllAndOverride).toHaveBeenCalledWith(REQUIRE_ROLE_KEY, [handler, klass]);
+  });
+
+  it('passes includeDeleted: false to getAccess when @AllowDeleted is not declared', async () => {
+    reflectorMock.getAllAndOverride.mockImplementation((key: string) =>
+      key === REQUIRE_ROLE_KEY ? 'OWNER' : undefined,
+    );
+    filesServiceMock.getAccess.mockResolvedValue({ file: { id: 'f1' }, role: 'OWNER' });
+    const request: Record<string, unknown> = { params: { id: 'f1' }, body: {}, localUserId: 'user_1' };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => request }),
+      getHandler: () => ({}),
+      getClass: () => ({}),
+    } as never;
+
+    await buildGuard().canActivate(context);
+
+    expect(filesServiceMock.getAccess).toHaveBeenCalledWith('f1', 'user_1', { includeDeleted: false });
+  });
+
+  it('passes includeDeleted: true to getAccess when @AllowDeleted() is declared on the handler (e.g. restore)', async () => {
+    reflectorMock.getAllAndOverride.mockImplementation((key: string) =>
+      key === REQUIRE_ROLE_KEY ? 'OWNER' : key === ALLOW_DELETED_KEY ? true : undefined,
+    );
+    filesServiceMock.getAccess.mockResolvedValue({ file: { id: 'f1', deletedAt: new Date() }, role: 'OWNER' });
+    const request: Record<string, unknown> = { params: { id: 'f1' }, body: {}, localUserId: 'user_1' };
+    const context = {
+      switchToHttp: () => ({ getRequest: () => request }),
+      getHandler: () => ({}),
+      getClass: () => ({}),
+    } as never;
+
+    await buildGuard().canActivate(context);
+
+    expect(filesServiceMock.getAccess).toHaveBeenCalledWith('f1', 'user_1', { includeDeleted: true });
   });
 });

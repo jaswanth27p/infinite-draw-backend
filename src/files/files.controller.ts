@@ -13,6 +13,7 @@ import { LoadLocalUserGuard } from '../auth/load-local-user.guard';
 import { CurrentLocalUserId } from '../auth/current-local-user-id.decorator';
 import { FileAccessGuard } from './file-access.guard';
 import { RequireRole } from './require-role.decorator';
+import { AllowDeleted } from './allow-deleted.decorator';
 import { CurrentFileAccess, type FileAccess } from './current-file-access.decorator';
 import { FilesService } from './files.service';
 import { UpdateFileDto } from './dto/update-file.dto';
@@ -59,12 +60,17 @@ export class FilesController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string, @CurrentLocalUserId() ownerId: string) {
-    return this.filesService.softDelete(id, ownerId);
+  @UseGuards(FileAccessGuard)
+  @RequireRole('OWNER')
+  remove(@CurrentFileAccess() access: FileAccess) {
+    return this.filesService.softDelete(access.file.id);
   }
 
   @Post(':id/restore')
-  restore(@Param('id') id: string, @CurrentLocalUserId() ownerId: string) {
-    return this.filesService.restore(id, ownerId);
+  @UseGuards(FileAccessGuard)
+  @RequireRole('OWNER')
+  @AllowDeleted()
+  restore(@CurrentFileAccess() access: FileAccess) {
+    return this.filesService.restore(access.file.id);
   }
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FilesService } from './files.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -64,31 +64,6 @@ describe('FilesService', () => {
     });
   });
 
-  it('getOwned returns the file when owned and not deleted', async () => {
-    const service = await buildService();
-    prismaMock.file.findFirst.mockResolvedValue({
-      id: 'f3',
-      ownerId: 'owner_1',
-    });
-
-    await expect(service.getOwned('f3', 'owner_1')).resolves.toEqual({
-      id: 'f3',
-      ownerId: 'owner_1',
-    });
-    expect(prismaMock.file.findFirst).toHaveBeenCalledWith({
-      where: { id: 'f3', ownerId: 'owner_1', deletedAt: null },
-    });
-  });
-
-  it('getOwned throws NotFoundException when missing, deleted, or not owned', async () => {
-    const service = await buildService();
-    prismaMock.file.findFirst.mockResolvedValue(null);
-
-    await expect(service.getOwned('f4', 'owner_1')).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
-  });
-
   it('update writes the given fields without re-checking ownership (the caller is guard-gated)', async () => {
     const service = await buildService();
     prismaMock.file.update.mockResolvedValue({ id: 'f5', name: 'Renamed' });
@@ -103,23 +78,53 @@ describe('FilesService', () => {
     expect(prismaMock.file.findFirst).not.toHaveBeenCalled();
   });
 
-  it("softDelete sets deletedAt only for the owner's file", async () => {
+  it('update only ever forwards its own whitelisted fields to Prisma, even if extra keys are smuggled onto the dto', async () => {
     const service = await buildService();
-    prismaMock.file.findFirst.mockResolvedValue({
-      id: 'f5',
-      ownerId: 'owner_1',
+    prismaMock.file.update.mockResolvedValue({ id: 'f5', name: 'Renamed' });
+
+    await service.update('f5', {
+      name: 'Renamed',
+      generalAccess: 'ANYONE',
+      generalAccessRole: 'EDITOR',
+      ownerId: 'attacker',
+    } as never);
+
+    expect(prismaMock.file.update).toHaveBeenCalledWith({
+      where: { id: 'f5' },
+      data: { name: 'Renamed' },
     });
+  });
+
+  it('softDelete sets deletedAt without re-checking ownership (the caller is guard-gated via @RequireRole(OWNER))', async () => {
+    const service = await buildService();
     prismaMock.file.update.mockResolvedValue({
       id: 'f5',
       deletedAt: new Date(),
     });
 
-    await service.softDelete('f5', 'owner_1');
+    await service.softDelete('f5');
 
     expect(prismaMock.file.update).toHaveBeenCalledWith({
       where: { id: 'f5' },
       data: { deletedAt: expect.any(Date) },
     });
+    expect(prismaMock.file.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('restore clears deletedAt without re-checking ownership (the caller is guard-gated via @RequireRole(OWNER) + @AllowDeleted)', async () => {
+    const service = await buildService();
+    prismaMock.file.update.mockResolvedValue({
+      id: 'f5',
+      deletedAt: null,
+    });
+
+    await service.restore('f5');
+
+    expect(prismaMock.file.update).toHaveBeenCalledWith({
+      where: { id: 'f5' },
+      data: { deletedAt: null },
+    });
+    expect(prismaMock.file.findFirst).not.toHaveBeenCalled();
   });
 
   describe('getAccess', () => {
@@ -172,6 +177,22 @@ describe('FilesService', () => {
       prismaMock.share.findUnique.mockResolvedValue(null);
 
       await expect(service.getAccess('f1', 'user_4')).resolves.toBeNull();
+    });
+
+    it('resolves OWNER for a soft-deleted file when includeDeleted is true (restore needs this)', async () => {
+      const service = await buildService();
+      prismaMock.file.findFirst.mockResolvedValue({
+        id: 'f1',
+        ownerId: 'owner_1',
+        deletedAt: new Date(),
+      });
+
+      const result = await service.getAccess('f1', 'owner_1', { includeDeleted: true });
+
+      expect(result).toEqual({ role: 'OWNER', file: expect.objectContaining({ id: 'f1' }) });
+      expect(prismaMock.file.findFirst).toHaveBeenCalledWith({
+        where: { id: 'f1' },
+      });
     });
 
     it('returns null when the file does not exist or is soft-deleted', async () => {

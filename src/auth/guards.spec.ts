@@ -27,6 +27,8 @@ describe.each([
   [FilesController, 'get', 'VIEWER'],
   [FilesController, 'update', 'EDITOR'],
   [FilesController, 'generalAccess', 'OWNER'],
+  [FilesController, 'remove', 'OWNER'],
+  [FilesController, 'restore', 'OWNER'],
   [FileVersionsController, 'save', 'EDITOR'],
   [FileVersionsController, 'list', 'VIEWER'],
   [FileVersionsController, 'restore', 'EDITOR'],

@@ -4,6 +4,7 @@ import type { Request } from 'express';
 import type { File } from '@prisma/client';
 import { FilesService } from './files.service';
 import { REQUIRE_ROLE_KEY } from './require-role.decorator';
+import { ALLOW_DELETED_KEY } from './allow-deleted.decorator';
 import { Role, ROLE_RANK } from './role';
 
 export interface FileAccess {
@@ -35,9 +36,29 @@ export class FileAccessGuard implements CanActivate {
     // but from the request body on StorageController#presign, which has no
     // file-scoped path segment.
     const params = request.params as Record<string, string>;
-    const fileId = params.fileId ?? params.id ?? (request.body as { fileId?: string } | undefined)?.fileId;
+    const fileId: unknown = params.fileId ?? params.id ?? (request.body as { fileId?: unknown } | undefined)?.fileId;
 
-    const access = await this.filesService.getAccess(fileId, request.localUserId as string);
+    // Guards run before pipes, so DTO validation on the body (e.g.
+    // PresignDto) never protects this read — a missing fileId or a
+    // non-string value (including an injected Prisma filter object like
+    // `{ fileId: { not: 'x' } }`) must fail closed here, before it ever
+    // reaches a Prisma `where` clause. Same NotFoundException as the
+    // genuine "file not found" case so malformed input isn't distinguishable
+    // from a missing file.
+    if (typeof fileId !== 'string' || fileId.length === 0) {
+      throw new NotFoundException('File not found');
+    }
+
+    // getAccess excludes soft-deleted files by default, which is correct
+    // for every route except FilesController#restore — undeleting a file
+    // requires resolving access to it while it's still marked deleted.
+    const allowDeleted =
+      this.reflector.getAllAndOverride<boolean>(ALLOW_DELETED_KEY, [context.getHandler(), context.getClass()]) ??
+      false;
+
+    const access = await this.filesService.getAccess(fileId, request.localUserId as string, {
+      includeDeleted: allowDeleted,
+    });
     if (!access) {
       throw new NotFoundException('File not found');
     }

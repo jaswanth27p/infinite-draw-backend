@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { GeneralAccess, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateFileDto } from './dto/update-file.dto';
@@ -34,44 +34,56 @@ export class FilesService {
     });
   }
 
-  async getOwned(id: string, ownerId: string) {
-    const file = await this.prisma.file.findFirst({
-      where: { id, ownerId, deletedAt: null },
-    });
-    if (!file) {
-      throw new NotFoundException('File not found');
-    }
-    return file;
-  }
-
   update(id: string, dto: UpdateFileDto) {
+    // Defensive on its own terms: explicitly destructure only the fields
+    // UpdateFileDto declares instead of casting the whole dto to
+    // Prisma.FileUpdateInput. This route sits behind an EDITOR floor, and a
+    // blanket cast would forward *any* key the caller sends straight to
+    // Prisma, relying solely on the global ValidationPipe({ whitelist:
+    // true }) in main.ts (a setting that lives in a different file) to keep
+    // e.g. generalAccess/ownerId from being smuggled through.
+    const { name, currentData, thumbnailUrl } = dto;
+    const data: Prisma.FileUpdateInput = {};
+    if (name !== undefined) {
+      data.name = name;
+    }
+    if (currentData !== undefined) {
+      data.currentData = currentData as Prisma.InputJsonValue;
+    }
+    if (thumbnailUrl !== undefined) {
+      data.thumbnailUrl = thumbnailUrl;
+    }
     return this.prisma.file.update({
       where: { id },
-      data: dto as Prisma.FileUpdateInput,
+      data,
     });
   }
 
-  async softDelete(id: string, ownerId: string) {
-    await this.getOwned(id, ownerId);
+  // Ownership is enforced by FileAccessGuard + @RequireRole('OWNER') at the
+  // controller (mirroring update()/updateGeneralAccess()) — the caller is
+  // guaranteed to already hold OWNER access before either method runs.
+  softDelete(id: string) {
     return this.prisma.file.update({
       where: { id },
       data: { deletedAt: new Date() },
     });
   }
 
-  async restore(id: string, ownerId: string) {
-    const file = await this.prisma.file.findFirst({ where: { id, ownerId } });
-    if (!file) {
-      throw new NotFoundException('File not found');
-    }
+  restore(id: string) {
     return this.prisma.file.update({
       where: { id },
       data: { deletedAt: null },
     });
   }
 
-  async getAccess(fileId: string, userId: string): Promise<{ file: Awaited<ReturnType<typeof this.prisma.file.findFirst>> & object; role: Role } | null> {
-    const file = await this.prisma.file.findFirst({ where: { id: fileId, deletedAt: null } });
+  async getAccess(
+    fileId: string,
+    userId: string,
+    options?: { includeDeleted?: boolean },
+  ): Promise<{ file: Awaited<ReturnType<typeof this.prisma.file.findFirst>> & object; role: Role } | null> {
+    const file = await this.prisma.file.findFirst({
+      where: { id: fileId, ...(options?.includeDeleted ? {} : { deletedAt: null }) },
+    });
     if (!file) {
       return null;
     }
