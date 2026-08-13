@@ -7,6 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ShareRole {
+  VIEWER
+  EDITOR
+}
+
+enum GeneralAccess {
+  RESTRICTED
+  ANYONE
+}
+
 model User {
   id        String   @id @default(cuid())
   clerkId   String   @unique
@@ -16,19 +26,23 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   files     File[]
+  shares    Share[]
 }
 
 model File {
-  id           String        @id @default(cuid())
-  ownerId      String
-  owner        User          @relation(fields: [ownerId], references: [id])
-  name         String        @default("Untitled")
-  currentData  Json
-  thumbnailUrl String?
-  deletedAt    DateTime?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  versions     FileVersion[]
+  id                String        @id @default(cuid())
+  ownerId           String
+  owner             User          @relation(fields: [ownerId], references: [id])
+  name              String        @default("Untitled")
+  currentData       Json
+  thumbnailUrl      String?
+  generalAccess     GeneralAccess @default(RESTRICTED)
+  generalAccessRole ShareRole?
+  deletedAt         DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  versions          FileVersion[]
+  shares            Share[]
 
   @@index([ownerId, deletedAt])
 }
@@ -43,4 +57,17 @@ model FileVersion {
   createdAt    DateTime @default(now())
 
   @@index([fileId, createdAt])
+}
+
+model Share {
+  id        String    @id @default(cuid())
+  fileId    String
+  file      File      @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  role      ShareRole
+  createdAt DateTime  @default(now())
+
+  @@unique([fileId, userId])
+  @@index([userId])
 }
