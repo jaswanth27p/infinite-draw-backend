@@ -3,14 +3,17 @@ import { CollabGateway } from './collab.gateway';
 import { FilesService } from '../files/files.service';
 
 function createClient(data: Record<string, unknown> = { userId: 'clerk_1', localUserId: 'local_1' }) {
-  return {
+  const client: any = {
     id: 'socket_1',
     data,
     join: jest.fn().mockResolvedValue(undefined),
     to: jest.fn().mockReturnThis(),
     volatile: { to: jest.fn().mockReturnThis() },
     emit: jest.fn(),
-  } as any;
+    on: jest.fn(),
+    rooms: new Set(),
+  };
+  return client;
 }
 
 function createServerMock(socketIds: string[]) {
@@ -59,14 +62,22 @@ describe('CollabGateway', () => {
     });
   });
 
-  describe('handleDisconnect', () => {
-    it('notifies every room the socket was in that membership changed', async () => {
+  describe('handleConnection', () => {
+    it('registers disconnecting handler that notifies rooms of membership change', async () => {
       gateway.server = createServerMock(['socket_2']);
       const client = createClient();
       client.rooms = new Set(['socket_1', 'file:f1']);
 
-      await gateway.handleDisconnect(client);
+      gateway.handleConnection(client);
 
+      // Verify that on('disconnecting', callback) was registered
+      expect(client.on).toHaveBeenCalledWith('disconnecting', expect.any(Function));
+
+      // Get the registered callback and invoke it to simulate disconnecting event
+      const disconnectingCallback = client.on.mock.calls[0][1];
+      await disconnectingCallback();
+
+      // Verify the room notification was sent
       expect(client.to).toHaveBeenCalledWith('file:f1');
       expect(client.emit).toHaveBeenCalledWith('room-user-change', { collaborators: ['socket_2'] });
     });

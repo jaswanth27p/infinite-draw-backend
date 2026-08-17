@@ -2,7 +2,7 @@ import { UseGuards } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
-  OnGatewayDisconnect,
+  OnGatewayConnection,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -21,7 +21,7 @@ const fileRoom = (fileId: string) => `file:${fileId}`;
 @WebSocketGateway({
   cors: { origin: getCorsOrigins() },
 })
-export class CollabGateway implements OnGatewayDisconnect {
+export class CollabGateway implements OnGatewayConnection {
   @WebSocketServer()
   server!: Server;
 
@@ -52,12 +52,11 @@ export class CollabGateway implements OnGatewayDisconnect {
     return { event: 'room-init', data: { collaborators } };
   }
 
-  // Nest's OnGatewayDisconnect fires once per socket, after Socket.IO has
-  // already removed it from every room it was in — `client.rooms` (a Set
-  // Socket.IO maintains) still reflects the *pre-leave* membership at the
-  // moment this fires, which is exactly what we need to know which rooms
-  // to notify.
-  async handleDisconnect(@ConnectedSocket() client: CollabSocket) {
+  // Hook into the 'disconnecting' event (fires before Socket.IO clears rooms)
+  // to capture and notify rooms of the socket's departure. We register this
+  // in handleConnection for each socket so it has access to client.rooms
+  // in its original state before leaveAll() empties it.
+  private async notifyRoomsOnLeave(client: CollabSocket) {
     for (const room of client.rooms ?? []) {
       if (!room.startsWith('file:')) {
         continue;
@@ -65,5 +64,13 @@ export class CollabGateway implements OnGatewayDisconnect {
       const collaborators = await this.roomCollaborators(room);
       client.to(room).emit('room-user-change', { collaborators });
     }
+  }
+
+  handleConnection(@ConnectedSocket() client: CollabSocket) {
+    client.on('disconnecting', async () => {
+      await this.notifyRoomsOnLeave(client).catch(() => {
+        // Suppress unhandled promise rejection; disconnection side-effects are non-critical
+      });
+    });
   }
 }
