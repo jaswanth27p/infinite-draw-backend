@@ -82,4 +82,49 @@ describe('CollabGateway', () => {
       expect(client.emit).toHaveBeenCalledWith('room-user-change', { collaborators: ['socket_2'] });
     });
   });
+
+  describe('scene-init / scene-update', () => {
+    it('relays scene-update to the room (excluding sender) when the caller is EDITOR or above', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'EDITOR', file: { id: 'f1' } });
+      const client = createClient();
+
+      await gateway.handleSceneUpdate(client, { fileId: 'f1', elements: [{ id: 'e1', version: 2 }] });
+
+      expect(filesServiceMock.getAccess).toHaveBeenCalledWith('f1', 'local_1');
+      expect(client.to).toHaveBeenCalledWith('file:f1');
+      expect(client.emit).toHaveBeenCalledWith('scene-update', {
+        elements: [{ id: 'e1', version: 2 }],
+      });
+    });
+
+    it('relays scene-init the same way, at the same EDITOR floor', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'OWNER', file: { id: 'f1' } });
+      const client = createClient();
+
+      await gateway.handleSceneInit(client, { fileId: 'f1', elements: [{ id: 'e1', version: 1 }] });
+
+      expect(client.to).toHaveBeenCalledWith('file:f1');
+      expect(client.emit).toHaveBeenCalledWith('scene-init', {
+        elements: [{ id: 'e1', version: 1 }],
+      });
+    });
+
+    it('silently drops scene-update when the caller is below EDITOR', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      const client = createClient();
+
+      await gateway.handleSceneUpdate(client, { fileId: 'f1', elements: [{ id: 'e1' }] });
+
+      expect(client.emit).not.toHaveBeenCalled();
+    });
+
+    it('silently drops scene-update when the caller has no access at all', async () => {
+      filesServiceMock.getAccess.mockResolvedValue(null);
+      const client = createClient();
+
+      await gateway.handleSceneUpdate(client, { fileId: 'f1', elements: [] });
+
+      expect(client.emit).not.toHaveBeenCalled();
+    });
+  });
 });

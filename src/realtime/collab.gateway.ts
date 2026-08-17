@@ -13,6 +13,7 @@ import { WsClerkGuard } from './ws-clerk.guard';
 import { WsLocalUserGuard } from './ws-local-user.guard';
 import { getCorsOrigins } from '../config/cors';
 import { FilesService } from '../files/files.service';
+import { Role, ROLE_RANK } from '../files/role';
 
 export type CollabSocket = Socket & { data: { userId: string; localUserId: string } };
 
@@ -30,6 +31,11 @@ export class CollabGateway implements OnGatewayConnection {
   private async roomCollaborators(room: string): Promise<string[]> {
     const sockets = await this.server.in(room).fetchSockets();
     return sockets.map((s) => s.id);
+  }
+
+  private async hasFloor(fileId: string, localUserId: string, minRole: Role): Promise<boolean> {
+    const access = await this.filesService.getAccess(fileId, localUserId);
+    return !!access && ROLE_RANK[access.role] >= ROLE_RANK[minRole];
   }
 
   @UseGuards(WsClerkGuard, WsLocalUserGuard)
@@ -50,6 +56,30 @@ export class CollabGateway implements OnGatewayConnection {
     client.to(room).emit('room-user-change', { collaborators });
 
     return { event: 'room-init', data: { collaborators } };
+  }
+
+  @UseGuards(WsClerkGuard, WsLocalUserGuard)
+  @SubscribeMessage('scene-init')
+  async handleSceneInit(
+    @ConnectedSocket() client: CollabSocket,
+    @MessageBody() body: { fileId: string; elements: unknown[] },
+  ) {
+    if (!(await this.hasFloor(body.fileId, client.data.localUserId, 'EDITOR'))) {
+      return;
+    }
+    client.to(fileRoom(body.fileId)).emit('scene-init', { elements: body.elements });
+  }
+
+  @UseGuards(WsClerkGuard, WsLocalUserGuard)
+  @SubscribeMessage('scene-update')
+  async handleSceneUpdate(
+    @ConnectedSocket() client: CollabSocket,
+    @MessageBody() body: { fileId: string; elements: unknown[] },
+  ) {
+    if (!(await this.hasFloor(body.fileId, client.data.localUserId, 'EDITOR'))) {
+      return;
+    }
+    client.to(fileRoom(body.fileId)).emit('scene-update', { elements: body.elements });
   }
 
   // Hook into the 'disconnecting' event (fires before Socket.IO clears rooms)
