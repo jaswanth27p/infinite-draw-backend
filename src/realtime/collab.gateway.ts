@@ -82,6 +82,46 @@ export class CollabGateway implements OnGatewayConnection {
     client.to(fileRoom(body.fileId)).emit('scene-update', { elements: body.elements });
   }
 
+  @UseGuards(WsClerkGuard, WsLocalUserGuard)
+  @SubscribeMessage('mouse-location')
+  async handleMouseLocation(
+    @ConnectedSocket() client: CollabSocket,
+    @MessageBody()
+    body: {
+      fileId: string;
+      pointer: { x: number; y: number };
+      button: 'up' | 'down';
+      selectedElementIds: Record<string, boolean>;
+      username: string | null;
+    },
+  ) {
+    if (!(await this.hasFloor(body.fileId, client.data.localUserId, 'EDITOR'))) {
+      return;
+    }
+    client.volatile.to(fileRoom(body.fileId)).emit('mouse-location', {
+      socketId: client.id,
+      pointer: body.pointer,
+      button: body.button,
+      selectedElementIds: body.selectedElementIds,
+      username: body.username,
+    });
+  }
+
+  @UseGuards(WsClerkGuard, WsLocalUserGuard)
+  @SubscribeMessage('idle-status')
+  async handleIdleStatus(
+    @ConnectedSocket() client: CollabSocket,
+    @MessageBody() body: { fileId: string; userState: 'active' | 'idle' | 'away' },
+  ) {
+    if (!(await this.hasFloor(body.fileId, client.data.localUserId, 'VIEWER'))) {
+      return;
+    }
+    client.volatile.to(fileRoom(body.fileId)).emit('idle-status', {
+      socketId: client.id,
+      userState: body.userState,
+    });
+  }
+
   // Hook into the 'disconnecting' event (fires before Socket.IO clears rooms)
   // to capture and notify rooms of the socket's departure. We register this
   // in handleConnection for each socket so it has access to client.rooms

@@ -7,8 +7,12 @@ import { ClerkAuthGuard } from './clerk-auth.guard';
 import { LoadLocalUserGuard } from './load-local-user.guard';
 import { FileAccessGuard } from '../files/file-access.guard';
 import { REQUIRE_ROLE_KEY } from '../files/require-role.decorator';
+import { CollabGateway } from '../realtime/collab.gateway';
+import { WsClerkGuard } from '../realtime/ws-clerk.guard';
+import { WsLocalUserGuard } from '../realtime/ws-local-user.guard';
 
 const GUARDS_METADATA_KEY = '__guards__';
+const WS_GUARDS_METADATA_KEY = '__guards__';
 
 describe.each([
   ['FilesController', FilesController],
@@ -53,5 +57,21 @@ describe('SharesController guard wiring', () => {
     expect(guards).toContain(LoadLocalUserGuard);
     expect(guards).toContain(FileAccessGuard);
     expect(role).toBe('OWNER');
+  });
+});
+
+describe.each([
+  ['join-room', 'handleJoinRoom'],
+  ['scene-init', 'handleSceneInit'],
+  ['scene-update', 'handleSceneUpdate'],
+  ['mouse-location', 'handleMouseLocation'],
+  ['idle-status', 'handleIdleStatus'],
+] as const)('CollabGateway#%s guard wiring', (_event, methodName) => {
+  it(`is guarded by WsClerkGuard and WsLocalUserGuard`, () => {
+    const handler = (CollabGateway.prototype as Record<string, unknown>)[methodName];
+    const guards: unknown[] = Reflect.getMetadata(WS_GUARDS_METADATA_KEY, handler as object) ?? [];
+
+    expect(guards).toContain(WsClerkGuard);
+    expect(guards).toContain(WsLocalUserGuard);
   });
 });

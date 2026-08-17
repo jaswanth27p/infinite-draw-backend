@@ -8,10 +8,12 @@ function createClient(data: Record<string, unknown> = { userId: 'clerk_1', local
     data,
     join: jest.fn().mockResolvedValue(undefined),
     to: jest.fn().mockReturnThis(),
-    volatile: { to: jest.fn().mockReturnThis() },
     emit: jest.fn(),
     on: jest.fn(),
     rooms: new Set(),
+  };
+  client.volatile = {
+    to: jest.fn(() => client),
   };
   return client;
 }
@@ -123,6 +125,67 @@ describe('CollabGateway', () => {
       const client = createClient();
 
       await gateway.handleSceneUpdate(client, { fileId: 'f1', elements: [] });
+
+      expect(client.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('mouse-location / idle-status', () => {
+    it('relays mouse-location volatile to the room (excluding sender) at EDITOR floor', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'EDITOR', file: { id: 'f1' } });
+      const client = createClient();
+
+      await gateway.handleMouseLocation(client, {
+        fileId: 'f1',
+        pointer: { x: 1, y: 2 },
+        button: 'up',
+        selectedElementIds: {},
+        username: 'Alice Owner',
+      });
+
+      expect(client.volatile.to).toHaveBeenCalledWith('file:f1');
+      expect(client.emit).toHaveBeenCalledWith('mouse-location', {
+        socketId: 'socket_1',
+        pointer: { x: 1, y: 2 },
+        button: 'up',
+        selectedElementIds: {},
+        username: 'Alice Owner',
+      });
+    });
+
+    it('silently drops mouse-location below EDITOR floor', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      const client = createClient();
+
+      await gateway.handleMouseLocation(client, {
+        fileId: 'f1',
+        pointer: { x: 0, y: 0 },
+        button: 'up',
+        selectedElementIds: {},
+        username: 'Bob Viewer',
+      });
+
+      expect(client.emit).not.toHaveBeenCalled();
+    });
+
+    it('relays idle-status volatile to the room at VIEWER floor (a Viewer may broadcast presence)', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      const client = createClient();
+
+      await gateway.handleIdleStatus(client, { fileId: 'f1', userState: 'active' });
+
+      expect(client.volatile.to).toHaveBeenCalledWith('file:f1');
+      expect(client.emit).toHaveBeenCalledWith('idle-status', {
+        socketId: 'socket_1',
+        userState: 'active',
+      });
+    });
+
+    it('silently drops idle-status when the caller has no access at all', async () => {
+      filesServiceMock.getAccess.mockResolvedValue(null);
+      const client = createClient();
+
+      await gateway.handleIdleStatus(client, { fileId: 'f1', userState: 'active' });
 
       expect(client.emit).not.toHaveBeenCalled();
     });
