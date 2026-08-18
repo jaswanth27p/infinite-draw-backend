@@ -17,6 +17,13 @@ enum GeneralAccess {
   ANYONE
 }
 
+enum NotificationType {
+  FILE_SHARED
+  ROLE_CHANGED
+  ACCESS_REMOVED
+  GENERAL_ACCESS_CHANGED
+}
+
 model User {
   id        String   @id @default(cuid())
   clerkId   String   @unique
@@ -27,6 +34,8 @@ model User {
   updatedAt DateTime @updatedAt
   files     File[]
   shares    Share[]
+  notificationsReceived Notification[] @relation("NotificationRecipient")
+  notificationsActed    Notification[] @relation("NotificationActor")
 }
 
 model File {
@@ -70,4 +79,21 @@ model Share {
 
   @@unique([fileId, userId])
   @@index([userId])
+}
+
+model Notification {
+  id        String            @id @default(cuid())
+  userId    String
+  actorId   String?
+  type      NotificationType
+  fileId    String?
+  fileName  String
+  role      ShareRole?
+  read      Boolean           @default(false)
+  createdAt DateTime          @default(now())
+
+  user  User  @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  actor User? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([userId, read, createdAt])
 }
