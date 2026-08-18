@@ -161,7 +161,7 @@ describe('NotificationsService', () => {
 
       expect(prismaMock.notification.findMany).toHaveBeenCalledWith({
         where: { userId: 'user_2' },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: 20,
         include: { actor: { select: { name: true, email: true } } },
       });
@@ -187,7 +187,7 @@ describe('NotificationsService', () => {
 
       expect(prismaMock.notification.findMany).toHaveBeenCalledWith({
         where: { userId: 'user_2' },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: 20,
         cursor: { id: 'n1' },
         skip: 1,

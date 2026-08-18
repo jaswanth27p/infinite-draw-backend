@@ -72,7 +72,7 @@ export class NotificationsService {
   async list(userId: string, cursor?: string, limit = 20): Promise<NotificationPayload[]> {
     const rows = (await this.prisma.notification.findMany({
       where: { userId },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       include: { actor: { select: { name: true, email: true } } },

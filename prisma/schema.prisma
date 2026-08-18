@@ -96,4 +96,5 @@ model Notification {
   actor User? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([userId, read, createdAt])
+  @@index([userId, createdAt])
 }

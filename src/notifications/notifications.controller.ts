@@ -15,9 +15,10 @@ export class NotificationsController {
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
   ) {
-    const take = limit ? Number(limit) : 20;
+    const parsed = limit ? Number(limit) : NaN;
+    const take = Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 50) : 20;
     const items = await this.notificationsService.list(userId, cursor, take);
-    const nextCursor = items.length === take ? items[items.length - 1].id : null;
+    const nextCursor = items.length > 0 && items.length === take ? items[items.length - 1].id : null;
     return { items, nextCursor };
   }
 
