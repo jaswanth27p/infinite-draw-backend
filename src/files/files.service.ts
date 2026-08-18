@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { GeneralAccess, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { UpdateFileDto } from './dto/update-file.dto';
 import { UpdateGeneralAccessDto } from './dto/update-general-access.dto';
 import { Role } from './role';
@@ -14,7 +15,10 @@ const FILE_LIST_SELECT = {
 
 @Injectable()
 export class FilesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   list(ownerId: string) {
     return this.prisma.file.findMany({
@@ -136,12 +140,19 @@ export class FilesService {
     if (dto.generalAccess === GeneralAccess.ANYONE && !dto.generalAccessRole) {
       throw new BadRequestException('generalAccessRole is required when generalAccess is ANYONE');
     }
-    return this.prisma.file.update({
+    const file = await this.prisma.file.update({
       where: { id },
       data: {
         generalAccess: dto.generalAccess,
         generalAccessRole: dto.generalAccess === GeneralAccess.ANYONE ? dto.generalAccessRole! : null,
       },
     });
+    await this.notificationsService.create({
+      recipientId: file.ownerId,
+      actorId: file.ownerId,
+      type: 'GENERAL_ACCESS_CHANGED',
+      file: { id: file.id, name: file.name },
+    });
+    return file;
   }
 }

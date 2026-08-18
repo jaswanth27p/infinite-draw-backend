@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FilesService } from './files.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 describe('FilesService', () => {
   const prismaMock = {
@@ -16,12 +17,14 @@ describe('FilesService', () => {
       findMany: jest.fn(),
     },
   };
+  const notificationsServiceMock = { create: jest.fn() };
 
   async function buildService() {
     const module = await Test.createTestingModule({
       providers: [
         FilesService,
         { provide: PrismaService, useValue: prismaMock },
+        { provide: NotificationsService, useValue: notificationsServiceMock },
       ],
     }).compile();
     return module.get(FilesService);
@@ -238,6 +241,26 @@ describe('FilesService', () => {
         service.updateGeneralAccess('f1', { generalAccess: 'ANYONE' } as never),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.file.update).not.toHaveBeenCalled();
+    });
+
+    it('creates a GENERAL_ACCESS_CHANGED notification for the owner', async () => {
+      const service = await buildService();
+      prismaMock.file.update.mockResolvedValue({
+        id: 'f1',
+        name: 'Q3 Roadmap',
+        ownerId: 'owner_1',
+        generalAccess: 'ANYONE',
+        generalAccessRole: 'VIEWER',
+      });
+
+      await service.updateGeneralAccess('f1', { generalAccess: 'ANYONE', generalAccessRole: 'VIEWER' } as never);
+
+      expect(notificationsServiceMock.create).toHaveBeenCalledWith({
+        recipientId: 'owner_1',
+        actorId: 'owner_1',
+        type: 'GENERAL_ACCESS_CHANGED',
+        file: { id: 'f1', name: 'Q3 Roadmap' },
+      });
     });
   });
 
