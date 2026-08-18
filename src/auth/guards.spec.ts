@@ -10,6 +10,8 @@ import { REQUIRE_ROLE_KEY } from '../files/require-role.decorator';
 import { CollabGateway } from '../realtime/collab.gateway';
 import { WsClerkGuard } from '../realtime/ws-clerk.guard';
 import { WsLocalUserGuard } from '../realtime/ws-local-user.guard';
+import { NotificationsController } from '../notifications/notifications.controller';
+import { NotificationsGateway } from '../notifications/notifications.gateway';
 
 const GUARDS_METADATA_KEY = '__guards__';
 const WS_GUARDS_METADATA_KEY = '__guards__';
@@ -18,6 +20,7 @@ describe.each([
   ['FilesController', FilesController],
   ['FileVersionsController', FileVersionsController],
   ['StorageController', StorageController],
+  ['NotificationsController', NotificationsController],
 ])('%s guard wiring', (_name, Controller) => {
   it('is guarded by both ClerkAuthGuard and LoadLocalUserGuard', () => {
     const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA_KEY, Controller) ?? [];
@@ -69,6 +72,16 @@ describe.each([
 ] as const)('CollabGateway#%s guard wiring', (_event, methodName) => {
   it(`is guarded by WsClerkGuard and WsLocalUserGuard`, () => {
     const handler = (CollabGateway.prototype as Record<string, unknown>)[methodName];
+    const guards: unknown[] = Reflect.getMetadata(WS_GUARDS_METADATA_KEY, handler as object) ?? [];
+
+    expect(guards).toContain(WsClerkGuard);
+    expect(guards).toContain(WsLocalUserGuard);
+  });
+});
+
+describe('NotificationsGateway#join-notifications guard wiring', () => {
+  it('is guarded by WsClerkGuard and WsLocalUserGuard', () => {
+    const handler = (NotificationsGateway.prototype as Record<string, unknown>)['handleJoinNotifications'];
     const guards: unknown[] = Reflect.getMetadata(WS_GUARDS_METADATA_KEY, handler as object) ?? [];
 
     expect(guards).toContain(WsClerkGuard);

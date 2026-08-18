@@ -6,8 +6,10 @@ import { FileVersionsService } from './file-versions.service';
 import { SharesController } from './shares.controller';
 import { SharesService } from './shares.service';
 import { FileAccessGuard } from './file-access.guard';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [FilesController, FileVersionsController, SharesController],
   providers: [FilesService, FileVersionsService, SharesService, FileAccessGuard],
   exports: [FilesService, FileVersionsService, FileAccessGuard],

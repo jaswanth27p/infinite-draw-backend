@@ -10,6 +10,7 @@ import { QueueModule } from './queue/queue.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { StorageModule } from './storage/storage.module';
 import { FilesModule } from './files/files.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { FilesModule } from './files/files.module';
     RealtimeModule,
     StorageModule,
     FilesModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
