@@ -36,6 +36,7 @@ model User {
   shares    Share[]
   notificationsReceived Notification[] @relation("NotificationRecipient")
   notificationsActed    Notification[] @relation("NotificationActor")
+  messagesSent           Message[]
 }
 
 model File {
@@ -52,6 +53,7 @@ model File {
   updatedAt         DateTime      @updatedAt
   versions          FileVersion[]
   shares            Share[]
+  messages          Message[]
 
   @@index([ownerId, deletedAt])
 }
@@ -97,4 +99,16 @@ model Notification {
 
   @@index([userId, read, createdAt])
   @@index([userId, createdAt])
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  fileId    String
+  file      File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([fileId, createdAt])
 }
