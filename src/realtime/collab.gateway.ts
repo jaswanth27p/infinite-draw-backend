@@ -15,9 +15,28 @@ import { getCorsOrigins } from '../config/cors';
 import { FilesService } from '../files/files.service';
 import { Role, ROLE_RANK } from '../files/role';
 
-export type CollabSocket = Socket & { data: { userId: string; localUserId: string } };
+type AccessCacheEntry = { role: Role | null; expiresAt: number };
+
+export type CollabSocket = Socket & {
+  data: {
+    userId: string;
+    localUserId: string;
+    displayName?: string | null;
+    accessCache?: Record<string, AccessCacheEntry>;
+  };
+};
 
 const fileRoom = (fileId: string) => `file:${fileId}`;
+
+// hasFloor's access verdict is cached per fileId on the socket for this
+// long. Short enough that a role downgrade still takes effect quickly;
+// long enough to collapse the ~30msg/s mouse-location stream (plus every
+// other handler) down to roughly one DB round-trip every few seconds per
+// active editor instead of one per message.
+const ACCESS_CACHE_TTL_MS = 3000;
+
+const isValidFileId = (fileId: unknown): fileId is string =>
+  typeof fileId === 'string' && fileId.length > 0;
 
 @WebSocketGateway({
   cors: { origin: getCorsOrigins() },
@@ -33,9 +52,35 @@ export class CollabGateway implements OnGatewayConnection {
     return sockets.map((s) => s.id);
   }
 
-  private async hasFloor(fileId: string, localUserId: string, minRole: Role): Promise<boolean> {
-    const access = await this.filesService.getAccess(fileId, localUserId);
-    return !!access && ROLE_RANK[access.role] >= ROLE_RANK[minRole];
+  // Authorization (WHAT can this connection do) is re-checked per message —
+  // unlike authentication, which is cached once per connection — because a
+  // live role change (e.g. a share downgrade) needs to take effect without
+  // waiting for a reconnect. The short-TTL cache below only bounds how many
+  // DB round-trips that re-check costs; it does not skip the re-check.
+  private async hasFloor(
+    client: CollabSocket,
+    fileId: string,
+    minRole: Role,
+  ): Promise<boolean> {
+    const now = Date.now();
+    const cached = client.data.accessCache?.[fileId];
+    let role: Role | null;
+
+    if (cached && cached.expiresAt > now) {
+      role = cached.role;
+    } else {
+      const access = await this.filesService.getAccess(
+        fileId,
+        client.data.localUserId,
+      );
+      role = access ? access.role : null;
+      client.data.accessCache = {
+        ...client.data.accessCache,
+        [fileId]: { role, expiresAt: now + ACCESS_CACHE_TTL_MS },
+      };
+    }
+
+    return !!role && ROLE_RANK[role] >= ROLE_RANK[minRole];
   }
 
   @UseGuards(WsClerkGuard, WsLocalUserGuard)
@@ -44,12 +89,30 @@ export class CollabGateway implements OnGatewayConnection {
     @ConnectedSocket() client: CollabSocket,
     @MessageBody() body: { fileId: string },
   ) {
-    const access = await this.filesService.getAccess(body.fileId, client.data.localUserId);
+    if (!isValidFileId(body?.fileId)) {
+      throw new WsException('Invalid fileId');
+    }
+
+    const access = await this.filesService.getAccess(
+      body.fileId,
+      client.data.localUserId,
+    );
     if (!access) {
       throw new WsException('No access to this file');
     }
 
     const room = fileRoom(body.fileId);
+
+    // A client should only ever be a member of one file:* room at a time —
+    // otherwise scene/mouse/idle events for a previously-joined file could
+    // keep flowing into a session that's since moved on to a different
+    // file. Leave every other file room before joining the new one.
+    for (const joinedRoom of client.rooms ?? []) {
+      if (joinedRoom.startsWith('file:') && joinedRoom !== room) {
+        await client.leave(joinedRoom);
+      }
+    }
+
     await client.join(room);
 
     const collaborators = await this.roomCollaborators(room);
@@ -64,10 +127,15 @@ export class CollabGateway implements OnGatewayConnection {
     @ConnectedSocket() client: CollabSocket,
     @MessageBody() body: { fileId: string; elements: unknown[] },
   ) {
-    if (!(await this.hasFloor(body.fileId, client.data.localUserId, 'EDITOR'))) {
+    if (!isValidFileId(body?.fileId)) {
       return;
     }
-    client.to(fileRoom(body.fileId)).emit('scene-init', { elements: body.elements });
+    if (!(await this.hasFloor(client, body.fileId, 'EDITOR'))) {
+      return;
+    }
+    client
+      .to(fileRoom(body.fileId))
+      .emit('scene-init', { fileId: body.fileId, elements: body.elements });
   }
 
   @UseGuards(WsClerkGuard, WsLocalUserGuard)
@@ -76,10 +144,15 @@ export class CollabGateway implements OnGatewayConnection {
     @ConnectedSocket() client: CollabSocket,
     @MessageBody() body: { fileId: string; elements: unknown[] },
   ) {
-    if (!(await this.hasFloor(body.fileId, client.data.localUserId, 'EDITOR'))) {
+    if (!isValidFileId(body?.fileId)) {
       return;
     }
-    client.to(fileRoom(body.fileId)).emit('scene-update', { elements: body.elements });
+    if (!(await this.hasFloor(client, body.fileId, 'EDITOR'))) {
+      return;
+    }
+    client
+      .to(fileRoom(body.fileId))
+      .emit('scene-update', { fileId: body.fileId, elements: body.elements });
   }
 
   @UseGuards(WsClerkGuard, WsLocalUserGuard)
@@ -95,15 +168,22 @@ export class CollabGateway implements OnGatewayConnection {
       username: string | null;
     },
   ) {
-    if (!(await this.hasFloor(body.fileId, client.data.localUserId, 'EDITOR'))) {
+    if (!isValidFileId(body?.fileId)) {
       return;
     }
+    if (!(await this.hasFloor(client, body.fileId, 'EDITOR'))) {
+      return;
+    }
+    // Never trust body.username: any connected EDITOR could claim to be
+    // anyone. The display name is resolved server-side by WsLocalUserGuard
+    // from the local User row and cached on client.data.
     client.volatile.to(fileRoom(body.fileId)).emit('mouse-location', {
+      fileId: body.fileId,
       socketId: client.id,
       pointer: body.pointer,
       button: body.button,
       selectedElementIds: body.selectedElementIds,
-      username: body.username,
+      username: client.data.displayName ?? null,
     });
   }
 
@@ -111,12 +191,17 @@ export class CollabGateway implements OnGatewayConnection {
   @SubscribeMessage('idle-status')
   async handleIdleStatus(
     @ConnectedSocket() client: CollabSocket,
-    @MessageBody() body: { fileId: string; userState: 'active' | 'idle' | 'away' },
+    @MessageBody()
+    body: { fileId: string; userState: 'active' | 'idle' | 'away' },
   ) {
-    if (!(await this.hasFloor(body.fileId, client.data.localUserId, 'VIEWER'))) {
+    if (!isValidFileId(body?.fileId)) {
+      return;
+    }
+    if (!(await this.hasFloor(client, body.fileId, 'VIEWER'))) {
       return;
     }
     client.volatile.to(fileRoom(body.fileId)).emit('idle-status', {
+      fileId: body.fileId,
       socketId: client.id,
       userState: body.userState,
     });
@@ -131,7 +216,13 @@ export class CollabGateway implements OnGatewayConnection {
       if (!room.startsWith('file:')) {
         continue;
       }
-      const collaborators = await this.roomCollaborators(room);
+      // 'disconnecting' fires before Socket.IO clears the socket's rooms, so
+      // the leaving client's own id is still present in fetchSockets() here
+      // — filter it out so the broadcasted presence list reflects who's
+      // actually left in the room.
+      const collaborators = (await this.roomCollaborators(room)).filter(
+        (id) => id !== client.id,
+      );
       client.to(room).emit('room-user-change', { collaborators });
     }
   }

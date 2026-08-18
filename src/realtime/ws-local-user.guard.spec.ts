@@ -15,18 +15,43 @@ describe('WsLocalUserGuard', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('attaches localUserId when a matching User row exists', async () => {
-    prismaMock.user.findUnique.mockResolvedValue({ id: 'local_1' });
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'local_1',
+      name: 'Alice',
+      email: 'alice@example.com',
+    });
     const guard = new WsLocalUserGuard(prismaMock as unknown as PrismaService);
     const context = createWsContext({ userId: 'clerk_1' });
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
     expect(context.switchToWs().getClient().data.localUserId).toBe('local_1');
-    expect(prismaMock.user.findUnique).toHaveBeenCalledWith({ where: { clerkId: 'clerk_1' } });
+    expect(context.switchToWs().getClient().data.displayName).toBe('Alice');
+    expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
+      where: { clerkId: 'clerk_1' },
+    });
+  });
+
+  it('falls back to email for displayName when the user has no name set', async () => {
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 'local_1',
+      name: null,
+      email: 'alice@example.com',
+    });
+    const guard = new WsLocalUserGuard(prismaMock as unknown as PrismaService);
+    const context = createWsContext({ userId: 'clerk_1' });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(context.switchToWs().getClient().data.displayName).toBe(
+      'alice@example.com',
+    );
   });
 
   it('skips the database lookup when localUserId is already cached on the connection', async () => {
     const guard = new WsLocalUserGuard(prismaMock as unknown as PrismaService);
-    const context = createWsContext({ userId: 'clerk_1', localUserId: 'local_1' });
+    const context = createWsContext({
+      userId: 'clerk_1',
+      localUserId: 'local_1',
+    });
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
     expect(prismaMock.user.findUnique).not.toHaveBeenCalled();
@@ -37,6 +62,8 @@ describe('WsLocalUserGuard', () => {
     const guard = new WsLocalUserGuard(prismaMock as unknown as PrismaService);
     const context = createWsContext({ userId: 'clerk_2' });
 
-    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(WsException);
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+      WsException,
+    );
   });
 });
