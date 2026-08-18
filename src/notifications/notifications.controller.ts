@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { LoadLocalUserGuard } from '../auth/load-local-user.guard';
 import { CurrentLocalUserId } from '../auth/current-local-user-id.decorator';
@@ -28,11 +28,13 @@ export class NotificationsController {
   }
 
   @Patch(':id/read')
+  @HttpCode(204)
   async markRead(@CurrentLocalUserId() userId: string, @Param('id') id: string) {
     await this.notificationsService.markRead(userId, id);
   }
 
   @Patch('read-all')
+  @HttpCode(204)
   async markAllRead(@CurrentLocalUserId() userId: string) {
     await this.notificationsService.markAllRead(userId);
   }
