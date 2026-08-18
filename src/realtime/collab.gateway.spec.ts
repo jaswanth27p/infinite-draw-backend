@@ -1,6 +1,7 @@
 import { WsException } from '@nestjs/websockets';
 import { CollabGateway } from './collab.gateway';
 import { FilesService } from '../files/files.service';
+import { ChatService } from '../chat/chat.service';
 
 function createClient(
   data: Record<string, unknown> = {
@@ -32,16 +33,22 @@ function createServerMock(socketIds: string[]) {
         .fn()
         .mockResolvedValue(socketIds.map((id) => ({ id }))),
     }),
+    to: jest.fn().mockReturnThis(),
+    emit: jest.fn(),
   } as any;
 }
 
 describe('CollabGateway', () => {
   const filesServiceMock = { getAccess: jest.fn() };
+  const chatServiceMock = { create: jest.fn() };
   let gateway: CollabGateway;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    gateway = new CollabGateway(filesServiceMock as unknown as FilesService);
+    gateway = new CollabGateway(
+      filesServiceMock as unknown as FilesService,
+      chatServiceMock as unknown as ChatService,
+    );
   });
 
   describe('join-room', () => {
@@ -389,6 +396,65 @@ describe('CollabGateway', () => {
 
       expect(filesServiceMock.getAccess).not.toHaveBeenCalled();
       expect(client.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('send-chat-message', () => {
+    const message = {
+      id: 'm1',
+      fileId: 'f1',
+      authorId: 'local_1',
+      authorName: 'Alice Owner',
+      body: 'hello',
+      createdAt: new Date('2026-08-18T00:00:00Z'),
+    };
+
+    it('creates a message and broadcasts it to the whole room, including the sender, at VIEWER floor', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      chatServiceMock.create.mockResolvedValue(message);
+      gateway.server = createServerMock([]);
+      const client = createClient();
+
+      const result = await gateway.handleSendChatMessage(client, { fileId: 'f1', body: 'hello' });
+
+      expect(chatServiceMock.create).toHaveBeenCalledWith('f1', 'local_1', 'hello');
+      expect(gateway.server.to).toHaveBeenCalledWith('file:f1');
+      expect(gateway.server.emit).toHaveBeenCalledWith('chat-message', message);
+      expect(result).toEqual(message);
+    });
+
+    it('silently drops when fileId is missing or not a non-empty string', async () => {
+      gateway.server = createServerMock([]);
+      const client = createClient();
+
+      await gateway.handleSendChatMessage(client, { fileId: '', body: 'hi' } as any);
+
+      expect(filesServiceMock.getAccess).not.toHaveBeenCalled();
+      expect(chatServiceMock.create).not.toHaveBeenCalled();
+      expect(gateway.server.emit).not.toHaveBeenCalled();
+    });
+
+    it('silently drops when the caller has no access at all', async () => {
+      filesServiceMock.getAccess.mockResolvedValue(null);
+      gateway.server = createServerMock([]);
+      const client = createClient();
+
+      await gateway.handleSendChatMessage(client, { fileId: 'f1', body: 'hi' });
+
+      expect(chatServiceMock.create).not.toHaveBeenCalled();
+      expect(gateway.server.emit).not.toHaveBeenCalled();
+    });
+
+    it('drops silently (no throw) when ChatService.create rejects validation', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      chatServiceMock.create.mockRejectedValue(new Error('Message body must not be empty'));
+      gateway.server = createServerMock([]);
+      const client = createClient();
+
+      const result = await gateway.handleSendChatMessage(client, { fileId: 'f1', body: '   ' });
+
+      expect(result).toBeUndefined();
+      expect(gateway.server.emit).not.toHaveBeenCalled();
     });
   });
 

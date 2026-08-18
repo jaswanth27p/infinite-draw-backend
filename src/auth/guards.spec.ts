@@ -72,6 +72,7 @@ describe.each([
   ['scene-update', 'handleSceneUpdate'],
   ['mouse-location', 'handleMouseLocation'],
   ['idle-status', 'handleIdleStatus'],
+  ['send-chat-message', 'handleSendChatMessage'],
 ] as const)('CollabGateway#%s guard wiring', (_event, methodName) => {
   it(`is guarded by WsClerkGuard and WsLocalUserGuard`, () => {
     const handler = (CollabGateway.prototype as Record<string, unknown>)[methodName];

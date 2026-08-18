@@ -14,6 +14,7 @@ import { WsLocalUserGuard } from './ws-local-user.guard';
 import { getCorsOrigins } from '../config/cors';
 import { FilesService } from '../files/files.service';
 import { Role, ROLE_RANK } from '../files/role';
+import { ChatService } from '../chat/chat.service';
 
 type AccessCacheEntry = { role: Role | null; expiresAt: number };
 
@@ -45,7 +46,10 @@ export class CollabGateway implements OnGatewayConnection {
   @WebSocketServer()
   server!: Server;
 
-  constructor(private readonly filesService: FilesService) {}
+  constructor(
+    private readonly filesService: FilesService,
+    private readonly chatService: ChatService,
+  ) {}
 
   private async roomCollaborators(room: string): Promise<string[]> {
     const sockets = await this.server.in(room).fetchSockets();
@@ -205,6 +209,40 @@ export class CollabGateway implements OnGatewayConnection {
       socketId: client.id,
       userState: body.userState,
     });
+  }
+
+  @UseGuards(WsClerkGuard, WsLocalUserGuard)
+  @SubscribeMessage('send-chat-message')
+  async handleSendChatMessage(
+    @ConnectedSocket() client: CollabSocket,
+    @MessageBody() body: { fileId: string; body: string },
+  ) {
+    if (!isValidFileId(body?.fileId)) {
+      return;
+    }
+    if (!(await this.hasFloor(client, body.fileId, 'VIEWER'))) {
+      return;
+    }
+
+    const message = await this.chatService
+      .create(body.fileId, client.data.localUserId, body.body)
+      .catch(() => null);
+    if (!message) {
+      return;
+    }
+
+    // Broadcast to the WHOLE room, including the sender — this is the one
+    // handler in this gateway that does, since the sender needs the
+    // server-assigned id/createdAt/authorName back rather than rendering
+    // an optimistic local echo it would have to reconcile later. Every
+    // other handler here uses `client.to(...)` (sender excluded) because
+    // the sender already has that state locally.
+    this.server.to(fileRoom(body.fileId)).emit('chat-message', message);
+    // Also returned as a Socket.IO ack to the sender only — the frontend
+    // uses this (not the broadcast) to learn which message ids are its
+    // own, since a client has no other way to resolve "my local user id"
+    // client-side.
+    return message;
   }
 
   // Hook into the 'disconnecting' event (fires before Socket.IO clears rooms)
