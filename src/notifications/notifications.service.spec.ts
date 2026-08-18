@@ -125,6 +125,20 @@ describe('NotificationsService', () => {
         }),
       ).resolves.toBeUndefined();
     });
+
+    it('propagates the error when the DB write itself fails (only the WS emit is fault-tolerant)', async () => {
+      prismaMock.notification.create.mockRejectedValue(new Error('db down'));
+      const service = buildService();
+
+      await expect(
+        service.create({
+          recipientId: 'user_2',
+          actorId: 'user_1',
+          type: 'FILE_SHARED' as never,
+          file: { id: 'f1', name: 'Q3 Roadmap' },
+        }),
+      ).rejects.toThrow('db down');
+    });
   });
 
   describe('list', () => {
