@@ -1,4 +1,4 @@
-import { UseGuards } from '@nestjs/common';
+import { Logger, UseGuards } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
@@ -45,6 +45,8 @@ const isValidFileId = (fileId: unknown): fileId is string =>
 export class CollabGateway implements OnGatewayConnection {
   @WebSocketServer()
   server!: Server;
+
+  private readonly logger = new Logger(CollabGateway.name);
 
   constructor(
     private readonly filesService: FilesService,
@@ -226,7 +228,12 @@ export class CollabGateway implements OnGatewayConnection {
 
     const message = await this.chatService
       .create(body.fileId, client.data.localUserId, body.body)
-      .catch(() => null);
+      .catch((err) => {
+        this.logger.warn(
+          `send-chat-message dropped for file ${body.fileId}: ${(err as Error).message}`,
+        );
+        return null;
+      });
     if (!message) {
       return;
     }

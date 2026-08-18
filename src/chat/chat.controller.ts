@@ -20,8 +20,10 @@ export class ChatController {
   ) {
     const parsed = limit ? Number(limit) : NaN;
     const take = Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 50) : 30;
-    const items = await this.chatService.list(fileId, cursor, take);
-    const nextCursor = items.length > 0 && items.length === take ? items[items.length - 1].id : null;
+    const rows = await this.chatService.list(fileId, cursor, take + 1);
+    const hasMore = rows.length > take;
+    const items = hasMore ? rows.slice(0, take) : rows;
+    const nextCursor = hasMore ? items[items.length - 1].id : null;
     return { items, nextCursor };
   }
 }
