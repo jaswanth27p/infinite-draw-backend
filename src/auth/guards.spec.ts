@@ -12,6 +12,7 @@ import { WsClerkGuard } from '../realtime/ws-clerk.guard';
 import { WsLocalUserGuard } from '../realtime/ws-local-user.guard';
 import { NotificationsController } from '../notifications/notifications.controller';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
+import { ChatController } from '../chat/chat.controller';
 
 const GUARDS_METADATA_KEY = '__guards__';
 const WS_GUARDS_METADATA_KEY = '__guards__';
@@ -21,6 +22,7 @@ describe.each([
   ['FileVersionsController', FileVersionsController],
   ['StorageController', StorageController],
   ['NotificationsController', NotificationsController],
+  ['ChatController', ChatController],
 ])('%s guard wiring', (_name, Controller) => {
   it('is guarded by both ClerkAuthGuard and LoadLocalUserGuard', () => {
     const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA_KEY, Controller) ?? [];
@@ -40,6 +42,7 @@ describe.each([
   [FileVersionsController, 'list', 'VIEWER'],
   [FileVersionsController, 'restore', 'EDITOR'],
   [StorageController, 'presign', 'EDITOR'],
+  [ChatController, 'list', 'VIEWER'],
 ] as const)('file-access floor on %s#%s', (Controller, methodName, expectedRole) => {
   it(`requires FileAccessGuard and RequireRole('${expectedRole}')`, () => {
     const handler = (Controller.prototype as Record<string, unknown>)[methodName];
