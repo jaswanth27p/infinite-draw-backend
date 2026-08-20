@@ -11,8 +11,8 @@ export class CreditsController {
 
   @Get('balance')
   async balance(@CurrentLocalUserId() userId: string) {
-    const user = await this.creditsService.getBalance(userId);
-    return { balance: user };
+    const balance = await this.creditsService.getBalance(userId);
+    return { balance };
   }
 
   @Post('checkout')
@@ -20,6 +20,9 @@ export class CreditsController {
     @CurrentLocalUserId() userId: string,
     @Body() body: { amountRupees: number },
   ) {
-    return this.creditsService.createTopupCheckoutSession(userId, body.amountRupees);
+    return this.creditsService.createTopupCheckoutSession(
+      userId,
+      body.amountRupees,
+    );
   }
 }

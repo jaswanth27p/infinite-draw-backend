@@ -20,7 +20,9 @@ describe('StripeWebhookController', () => {
     jest.clearAllMocks();
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test';
     process.env.STRIPE_SECRET_KEY = 'sk_test_xxx';
-    controller = new StripeWebhookController(creditsServiceMock as unknown as CreditsService);
+    controller = new StripeWebhookController(
+      creditsServiceMock as unknown as CreditsService,
+    );
   });
 
   function buildRequest(): RawBodyRequest<Request> {
@@ -36,7 +38,24 @@ describe('StripeWebhookController', () => {
 
     const result = await controller.handle(buildRequest(), 'sig_1');
 
-    expect(creditsServiceMock.handleCheckoutCompleted).toHaveBeenCalledWith(session);
+    expect(creditsServiceMock.handleCheckoutCompleted).toHaveBeenCalledWith(
+      session,
+    );
+    expect(result).toEqual({ received: true });
+  });
+
+  it('dispatches a verified checkout.session.async_payment_succeeded event to CreditsService', async () => {
+    const session = { id: 'cs_test_2' };
+    mockConstructEvent.mockReturnValue({
+      type: 'checkout.session.async_payment_succeeded',
+      data: { object: session },
+    });
+
+    const result = await controller.handle(buildRequest(), 'sig_1');
+
+    expect(creditsServiceMock.handleCheckoutCompleted).toHaveBeenCalledWith(
+      session,
+    );
     expect(result).toEqual({ received: true });
   });
 
@@ -66,7 +85,9 @@ describe('StripeWebhookController', () => {
   it('throws BadRequestException when raw body is missing', async () => {
     const req = { rawBody: undefined } as unknown as RawBodyRequest<Request>;
 
-    await expect(controller.handle(req, 'sig_1')).rejects.toThrow(BadRequestException);
+    await expect(controller.handle(req, 'sig_1')).rejects.toThrow(
+      BadRequestException,
+    );
     expect(mockConstructEvent).not.toHaveBeenCalled();
   });
 });

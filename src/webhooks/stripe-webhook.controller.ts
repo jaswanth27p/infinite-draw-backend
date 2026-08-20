@@ -1,4 +1,10 @@
-import { BadRequestException, Controller, Headers, Post, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Headers,
+  Post,
+  Req,
+} from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import Stripe from 'stripe';
@@ -9,9 +15,6 @@ export class StripeWebhookController {
   private readonly stripe: Stripe;
 
   constructor(private readonly creditsService: CreditsService) {
-    // Same apiVersion note as CreditsService — pass the SDK-required
-    // literal as a second constructor argument if the installed types
-    // demand it.
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
   }
 
@@ -35,10 +38,11 @@ export class StripeWebhookController {
       throw new BadRequestException('Invalid webhook signature');
     }
 
-    if (event.type === 'checkout.session.completed') {
-      await this.creditsService.handleCheckoutCompleted(
-        event.data.object as Stripe.Checkout.Session,
-      );
+    if (
+      event.type === 'checkout.session.completed' ||
+      event.type === 'checkout.session.async_payment_succeeded'
+    ) {
+      await this.creditsService.handleCheckoutCompleted(event.data.object);
     }
 
     return { received: true };
