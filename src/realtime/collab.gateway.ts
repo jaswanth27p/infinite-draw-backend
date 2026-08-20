@@ -318,6 +318,54 @@ export class CollabGateway implements OnGatewayConnection {
     client.to(fileRoom(body.fileId)).emit('voice-user-left', { socketId: client.id });
   }
 
+  @UseGuards(WsClerkGuard, WsLocalUserGuard)
+  @SubscribeMessage('voice-signal')
+  async handleVoiceSignal(
+    @ConnectedSocket() client: CollabSocket,
+    @MessageBody() body: { fileId: string; targetSocketId: string; signal: unknown },
+  ) {
+    if (!isValidFileId(body?.fileId)) {
+      return;
+    }
+    if (!(await this.hasFloor(client, body.fileId, 'VIEWER'))) {
+      return;
+    }
+    // Bounds relay to legitimate call participants, not arbitrary
+    // connected socket ids — signal's *contents* (SDP/ICE payloads) are
+    // otherwise opaque and unvalidated by the server.
+    const roster = this.voiceRosters.get(body.fileId);
+    if (!roster?.has(body.targetSocketId)) {
+      return;
+    }
+    // Targeted at one socket, not broadcast to the room — unlike every
+    // other event this gateway sends. Uses server.to (not client.to)
+    // since the target may not be the sender's own room-relative view.
+    this.server.to(body.targetSocketId).emit('voice-signal', {
+      fromSocketId: client.id,
+      signal: body.signal,
+    });
+  }
+
+  @UseGuards(WsClerkGuard, WsLocalUserGuard)
+  @SubscribeMessage('voice-mute-changed')
+  async handleVoiceMuteChanged(
+    @ConnectedSocket() client: CollabSocket,
+    @MessageBody() body: { fileId: string; muted: boolean },
+  ) {
+    if (!isValidFileId(body?.fileId)) {
+      return;
+    }
+    if (!(await this.hasFloor(client, body.fileId, 'VIEWER'))) {
+      return;
+    }
+    // Volatile, same tolerance as idle-status — a missed mute-state update
+    // self-heals on the next toggle.
+    client.volatile.to(fileRoom(body.fileId)).emit('voice-mute-changed', {
+      socketId: client.id,
+      muted: body.muted,
+    });
+  }
+
   // Hook into the 'disconnecting' event (fires before Socket.IO clears rooms)
   // to capture and notify rooms of the socket's departure. We register this
   // in handleConnection for each socket so it has access to client.rooms
@@ -327,14 +375,20 @@ export class CollabGateway implements OnGatewayConnection {
       if (!room.startsWith('file:')) {
         continue;
       }
-      // 'disconnecting' fires before Socket.IO clears the socket's rooms, so
-      // the leaving client's own id is still present in fetchSockets() here
-      // — filter it out so the broadcasted presence list reflects who's
-      // actually left in the room.
       const collaborators = (await this.roomCollaborators(room)).filter(
         (id) => id !== client.id,
       );
       client.to(room).emit('room-user-change', { collaborators });
+
+      // The only place voice roster cleanup happens for a dropped
+      // (non-graceful) connection — a graceful leave goes through
+      // handleLeaveVoice instead, but both paths emit the identical event
+      // so clients handle either case the same way.
+      const fileId = room.slice('file:'.length);
+      const voiceRoster = this.voiceRosters.get(fileId);
+      if (voiceRoster?.delete(client.id)) {
+        client.to(room).emit('voice-user-left', { socketId: client.id });
+      }
     }
   }
 

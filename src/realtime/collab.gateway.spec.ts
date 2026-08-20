@@ -172,6 +172,35 @@ describe('CollabGateway', () => {
         collaborators: ['socket_2'],
       });
     });
+
+    it('removes a disconnecting socket from any file voice roster it was in and broadcasts voice-user-left', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      gateway.server = createServerMock(['socket_2']);
+      const client = createClient();
+      client.rooms = new Set(['socket_1', 'file:f1']);
+      await gateway.handleJoinVoice(client, { fileId: 'f1' });
+      client.to.mockClear();
+      client.emit.mockClear();
+
+      gateway.handleConnection(client);
+      const disconnectingCallback = client.on.mock.calls[0][1];
+      await disconnectingCallback();
+
+      expect(client.to).toHaveBeenCalledWith('file:f1');
+      expect(client.emit).toHaveBeenCalledWith('voice-user-left', { socketId: 'socket_1' });
+    });
+
+    it('does not emit voice-user-left for a room the socket was in but never joined voice on', async () => {
+      gateway.server = createServerMock(['socket_2']);
+      const client = createClient();
+      client.rooms = new Set(['socket_1', 'file:f1']);
+
+      gateway.handleConnection(client);
+      const disconnectingCallback = client.on.mock.calls[0][1];
+      await disconnectingCallback();
+
+      expect(client.emit).not.toHaveBeenCalledWith('voice-user-left', expect.anything());
+    });
   });
 
   describe('scene-init / scene-update', () => {
@@ -529,6 +558,94 @@ describe('CollabGateway', () => {
       await expect(
         gateway.handleLeaveVoice(client, { fileId: 'f1' }),
       ).resolves.toBeUndefined();
+      expect(client.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('voice-signal', () => {
+    it('relays a signal only to a target socket currently in the voice roster, via server.to (not client.to)', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      gateway.server = createServerMock([]);
+      const target = createClient({ userId: 'clerk_2', localUserId: 'local_2' });
+      target.id = 'socket_2';
+      await gateway.handleJoinVoice(target, { fileId: 'f1' });
+      const client = createClient();
+
+      await gateway.handleVoiceSignal(client, {
+        fileId: 'f1',
+        targetSocketId: 'socket_2',
+        signal: { type: 'offer', sdp: 'abc' },
+      });
+
+      expect(gateway.server.to).toHaveBeenCalledWith('socket_2');
+      expect(gateway.server.emit).toHaveBeenCalledWith('voice-signal', {
+        fromSocketId: 'socket_1',
+        signal: { type: 'offer', sdp: 'abc' },
+      });
+    });
+
+    it("drops silently when targetSocketId is not currently in that file's voice roster", async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      gateway.server = createServerMock([]);
+      const client = createClient();
+
+      await gateway.handleVoiceSignal(client, {
+        fileId: 'f1',
+        targetSocketId: 'socket_2',
+        signal: { type: 'offer', sdp: 'abc' },
+      });
+
+      expect(gateway.server.emit).not.toHaveBeenCalled();
+    });
+
+    it('drops silently when the caller lacks VIEWER-or-above access', async () => {
+      filesServiceMock.getAccess.mockResolvedValue(null);
+      gateway.server = createServerMock([]);
+      const client = createClient();
+
+      await gateway.handleVoiceSignal(client, {
+        fileId: 'f1',
+        targetSocketId: 'socket_2',
+        signal: { type: 'offer', sdp: 'abc' },
+      });
+
+      expect(gateway.server.emit).not.toHaveBeenCalled();
+    });
+
+    it('drops silently when fileId is missing or not a non-empty string', async () => {
+      gateway.server = createServerMock([]);
+      const client = createClient();
+
+      await gateway.handleVoiceSignal(client, {
+        targetSocketId: 'socket_2',
+        signal: { type: 'offer', sdp: 'abc' },
+      } as any);
+
+      expect(filesServiceMock.getAccess).not.toHaveBeenCalled();
+      expect(gateway.server.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('voice-mute-changed', () => {
+    it('broadcasts mute state volatile to the room (excluding sender) at VIEWER floor', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      const client = createClient();
+
+      await gateway.handleVoiceMuteChanged(client, { fileId: 'f1', muted: true });
+
+      expect(client.volatile.to).toHaveBeenCalledWith('file:f1');
+      expect(client.emit).toHaveBeenCalledWith('voice-mute-changed', {
+        socketId: 'socket_1',
+        muted: true,
+      });
+    });
+
+    it('drops silently when the caller lacks access', async () => {
+      filesServiceMock.getAccess.mockResolvedValue(null);
+      const client = createClient();
+
+      await gateway.handleVoiceMuteChanged(client, { fileId: 'f1', muted: true });
+
       expect(client.emit).not.toHaveBeenCalled();
     });
   });
