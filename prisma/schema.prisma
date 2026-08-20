@@ -37,6 +37,8 @@ model User {
   notificationsReceived Notification[] @relation("NotificationRecipient")
   notificationsActed    Notification[] @relation("NotificationActor")
   messagesSent           Message[]
+  creditBalance          Int             @default(0)
+  creditTopups           CreditTopup[]
 }
 
 model File {
@@ -111,4 +113,16 @@ model Message {
   createdAt DateTime @default(now())
 
   @@index([fileId, createdAt])
+}
+
+model CreditTopup {
+  id                      String   @id @default(cuid())
+  userId                  String
+  user                    User     @relation(fields: [userId], references: [id])
+  amountRupees            Int
+  stripeCheckoutSessionId String   @unique
+  stripePaymentIntentId   String?
+  createdAt               DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
