@@ -17,6 +17,14 @@ export class CreditsService {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
   }
 
+  async getBalance(userId: string): Promise<number> {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { creditBalance: true },
+    });
+    return user.creditBalance;
+  }
+
   async createTopupCheckoutSession(
     userId: string,
     amountRupees: number,

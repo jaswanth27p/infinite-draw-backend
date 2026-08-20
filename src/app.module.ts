@@ -13,6 +13,7 @@ import { FilesModule } from './files/files.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ChatModule } from './chat/chat.module';
 import { VoiceModule } from './voice/voice.module';
+import { CreditsModule } from './credits/credits.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { VoiceModule } from './voice/voice.module';
     NotificationsModule,
     ChatModule,
     VoiceModule,
+    CreditsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

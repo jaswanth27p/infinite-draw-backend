@@ -14,6 +14,7 @@ import { NotificationsController } from '../notifications/notifications.controll
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ChatController } from '../chat/chat.controller';
 import { VoiceController } from '../voice/voice.controller';
+import { CreditsController } from '../credits/credits.controller';
 
 const GUARDS_METADATA_KEY = '__guards__';
 const WS_GUARDS_METADATA_KEY = '__guards__';
@@ -25,6 +26,7 @@ describe.each([
   ['NotificationsController', NotificationsController],
   ['ChatController', ChatController],
   ['VoiceController', VoiceController],
+  ['CreditsController', CreditsController],
 ])('%s guard wiring', (_name, Controller) => {
   it('is guarded by both ClerkAuthGuard and LoadLocalUserGuard', () => {
     const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA_KEY, Controller) ?? [];
