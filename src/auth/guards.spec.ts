@@ -13,6 +13,7 @@ import { WsLocalUserGuard } from '../realtime/ws-local-user.guard';
 import { NotificationsController } from '../notifications/notifications.controller';
 import { NotificationsGateway } from '../notifications/notifications.gateway';
 import { ChatController } from '../chat/chat.controller';
+import { VoiceController } from '../voice/voice.controller';
 
 const GUARDS_METADATA_KEY = '__guards__';
 const WS_GUARDS_METADATA_KEY = '__guards__';
@@ -23,6 +24,7 @@ describe.each([
   ['StorageController', StorageController],
   ['NotificationsController', NotificationsController],
   ['ChatController', ChatController],
+  ['VoiceController', VoiceController],
 ])('%s guard wiring', (_name, Controller) => {
   it('is guarded by both ClerkAuthGuard and LoadLocalUserGuard', () => {
     const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA_KEY, Controller) ?? [];

@@ -12,6 +12,7 @@ import { StorageModule } from './storage/storage.module';
 import { FilesModule } from './files/files.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ChatModule } from './chat/chat.module';
+import { VoiceModule } from './voice/voice.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ChatModule } from './chat/chat.module';
     FilesModule,
     NotificationsModule,
     ChatModule,
+    VoiceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
