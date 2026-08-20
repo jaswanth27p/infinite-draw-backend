@@ -56,6 +56,14 @@ export class CollabGateway implements OnGatewayConnection {
   // Voice-call roster per file, in-memory only — never a Prisma model,
   // same as this gateway's existing cursor/presence tracking. Always a
   // subset of that file's `file:<fileId>` room membership.
+  //
+  // NOTE: this is process-local state. This gateway's Socket.IO server
+  // otherwise uses a Redis adapter (see realtime/redis-io.adapter.ts) for
+  // multi-node fanout of room broadcasts, but voiceRosters itself is not
+  // mirrored through Redis. In a multi-replica deployment, voice-signal
+  // relay and the MAX_VOICE_PARTICIPANTS cap would only see same-node
+  // members — a future fix would move this into Redis alongside (or
+  // instead of) this in-process Map.
   private readonly voiceRosters = new Map<string, Set<string>>();
 
   constructor(
