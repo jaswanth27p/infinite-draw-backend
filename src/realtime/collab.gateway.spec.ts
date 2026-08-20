@@ -458,6 +458,81 @@ describe('CollabGateway', () => {
     });
   });
 
+  describe('join-voice / leave-voice', () => {
+    it('adds the caller to the file voice roster, broadcasts voice-user-joined (excluding sender), and returns the roster as it was before joining', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      const other = createClient({ userId: 'clerk_2', localUserId: 'local_2', displayName: 'Bob' });
+      other.id = 'socket_2';
+      await gateway.handleJoinVoice(other, { fileId: 'f1' });
+      const client = createClient();
+
+      const result = await gateway.handleJoinVoice(client, { fileId: 'f1' });
+
+      expect(result).toEqual({ joined: true, participants: ['socket_2'] });
+      expect(client.to).toHaveBeenCalledWith('file:f1');
+      expect(client.emit).toHaveBeenCalledWith('voice-user-joined', { socketId: 'socket_1' });
+    });
+
+    it('rejects with reason "no-access" when the caller lacks VIEWER-or-above access', async () => {
+      filesServiceMock.getAccess.mockResolvedValue(null);
+      const client = createClient();
+
+      const result = await gateway.handleJoinVoice(client, { fileId: 'f1' });
+
+      expect(result).toEqual({ joined: false, reason: 'no-access' });
+    });
+
+    it('rejects with reason "no-access" when fileId is missing or not a non-empty string, without querying access', async () => {
+      const client = createClient();
+
+      const result = await gateway.handleJoinVoice(client, { fileId: '' } as any);
+
+      expect(result).toEqual({ joined: false, reason: 'no-access' });
+      expect(filesServiceMock.getAccess).not.toHaveBeenCalled();
+    });
+
+    it('rejects with reason "full" once the roster already has 6 members, without adding the caller or broadcasting', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      for (let i = 0; i < 6; i++) {
+        const c = createClient({ userId: `clerk_${i}`, localUserId: `local_${i}` });
+        c.id = `socket_full_${i}`;
+        await gateway.handleJoinVoice(c, { fileId: 'f1' });
+      }
+      const seventh = createClient();
+      seventh.id = 'socket_seventh';
+
+      const result = await gateway.handleJoinVoice(seventh, { fileId: 'f1' });
+
+      expect(result).toEqual({ joined: false, reason: 'full' });
+      expect(seventh.to).not.toHaveBeenCalled();
+    });
+
+    it('leave-voice removes the caller from the roster and broadcasts voice-user-left', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      const client = createClient();
+      await gateway.handleJoinVoice(client, { fileId: 'f1' });
+
+      await gateway.handleLeaveVoice(client, { fileId: 'f1' });
+
+      expect(client.to).toHaveBeenCalledWith('file:f1');
+      expect(client.emit).toHaveBeenCalledWith('voice-user-left', { socketId: 'socket_1' });
+
+      const other = createClient({ userId: 'clerk_2', localUserId: 'local_2' });
+      other.id = 'socket_2';
+      const result = await gateway.handleJoinVoice(other, { fileId: 'f1' });
+      expect(result).toEqual({ joined: true, participants: [] });
+    });
+
+    it('leave-voice is a no-op (no broadcast) when the caller was never in that file\'s roster', async () => {
+      const client = createClient();
+
+      await expect(
+        gateway.handleLeaveVoice(client, { fileId: 'f1' }),
+      ).resolves.toBeUndefined();
+      expect(client.emit).not.toHaveBeenCalled();
+    });
+  });
+
   describe('hasFloor access cache', () => {
     it('caches the access verdict per fileId and skips a second DB round-trip within the TTL window', async () => {
       filesServiceMock.getAccess.mockResolvedValue({

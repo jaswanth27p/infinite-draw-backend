@@ -36,6 +36,11 @@ const fileRoom = (fileId: string) => `file:${fileId}`;
 // active editor instead of one per message.
 const ACCESS_CACHE_TTL_MS = 3000;
 
+// Documented mesh-call cap, not a configurable limit — see the voice-chat
+// design spec's "Explicitly out of scope" section (scaling beyond this is
+// not solved here).
+const MAX_VOICE_PARTICIPANTS = 6;
+
 const isValidFileId = (fileId: unknown): fileId is string =>
   typeof fileId === 'string' && fileId.length > 0;
 
@@ -48,6 +53,11 @@ export class CollabGateway implements OnGatewayConnection {
 
   private readonly logger = new Logger(CollabGateway.name);
 
+  // Voice-call roster per file, in-memory only — never a Prisma model,
+  // same as this gateway's existing cursor/presence tracking. Always a
+  // subset of that file's `file:<fileId>` room membership.
+  private readonly voiceRosters = new Map<string, Set<string>>();
+
   constructor(
     private readonly filesService: FilesService,
     private readonly chatService: ChatService,
@@ -56,6 +66,15 @@ export class CollabGateway implements OnGatewayConnection {
   private async roomCollaborators(room: string): Promise<string[]> {
     const sockets = await this.server.in(room).fetchSockets();
     return sockets.map((s) => s.id);
+  }
+
+  private voiceRoster(fileId: string): Set<string> {
+    let roster = this.voiceRosters.get(fileId);
+    if (!roster) {
+      roster = new Set();
+      this.voiceRosters.set(fileId, roster);
+    }
+    return roster;
   }
 
   // Authorization (WHAT can this connection do) is re-checked per message —
@@ -250,6 +269,53 @@ export class CollabGateway implements OnGatewayConnection {
     // own, since a client has no other way to resolve "my local user id"
     // client-side.
     return message;
+  }
+
+  @UseGuards(WsClerkGuard, WsLocalUserGuard)
+  @SubscribeMessage('join-voice')
+  async handleJoinVoice(
+    @ConnectedSocket() client: CollabSocket,
+    @MessageBody() body: { fileId: string },
+  ): Promise<
+    | { joined: true; participants: string[] }
+    | { joined: false; reason: 'full' | 'no-access' }
+  > {
+    if (
+      !isValidFileId(body?.fileId) ||
+      !(await this.hasFloor(client, body.fileId, 'VIEWER'))
+    ) {
+      return { joined: false, reason: 'no-access' };
+    }
+
+    const roster = this.voiceRoster(body.fileId);
+    if (roster.size >= MAX_VOICE_PARTICIPANTS) {
+      return { joined: false, reason: 'full' };
+    }
+
+    // Snapshot the roster's *other* members before adding the caller — the
+    // joiner already knows its own id, so it isn't included in the
+    // returned list.
+    const participants = Array.from(roster);
+    roster.add(client.id);
+    client.to(fileRoom(body.fileId)).emit('voice-user-joined', { socketId: client.id });
+
+    return { joined: true, participants };
+  }
+
+  @UseGuards(WsClerkGuard, WsLocalUserGuard)
+  @SubscribeMessage('leave-voice')
+  async handleLeaveVoice(
+    @ConnectedSocket() client: CollabSocket,
+    @MessageBody() body: { fileId: string },
+  ) {
+    if (!isValidFileId(body?.fileId)) {
+      return;
+    }
+    const roster = this.voiceRosters.get(body.fileId);
+    if (!roster?.delete(client.id)) {
+      return;
+    }
+    client.to(fileRoom(body.fileId)).emit('voice-user-left', { socketId: client.id });
   }
 
   // Hook into the 'disconnecting' event (fires before Socket.IO clears rooms)
