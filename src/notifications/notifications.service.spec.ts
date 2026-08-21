@@ -139,6 +139,20 @@ describe('NotificationsService', () => {
         }),
       ).rejects.toThrow('db down');
     });
+
+    it('is a no-op when the recipient is the actor (never notify a user about their own action)', async () => {
+      const service = buildService();
+
+      await service.create({
+        recipientId: 'user_1',
+        actorId: 'user_1',
+        type: 'GENERAL_ACCESS_CHANGED' as never,
+        file: { id: 'f1', name: 'Q3 Roadmap' },
+      });
+
+      expect(prismaMock.notification.create).not.toHaveBeenCalled();
+      expect(gatewayMock.server.to).not.toHaveBeenCalled();
+    });
   });
 
   describe('list', () => {

@@ -43,6 +43,13 @@ export class NotificationsService {
   ) {}
 
   async create(input: CreateNotificationInput): Promise<void> {
+    // Never notify a user about their own action (e.g. the owner toggling
+    // general access on their own file) — recipient === actor means there's
+    // no one else to tell.
+    if (input.actorId === input.recipientId) {
+      return;
+    }
+
     const row = (await this.prisma.notification.create({
       data: {
         userId: input.recipientId,
