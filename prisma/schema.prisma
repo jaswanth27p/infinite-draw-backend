@@ -39,6 +39,7 @@ model User {
   messagesSent           Message[]
   creditBalance          Int             @default(0)
   creditTopups           CreditTopup[]
+  aiUsageReservations    AiUsageReservation[]
 }
 
 model File {
@@ -125,4 +126,24 @@ model CreditTopup {
   createdAt               DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+model AiUsageReservation {
+  id                  String        @id @default(cuid())
+  userId              String
+  user                User          @relation(fields: [userId], references: [id])
+  requestId           String        @unique
+  status              AiUsageStatus @default(RESERVED)
+  estimatedCostRupees Decimal
+  actualCostRupees    Decimal?
+  createdAt           DateTime      @default(now())
+  settledAt           DateTime?
+
+  @@index([status, createdAt])
+}
+
+enum AiUsageStatus {
+  RESERVED
+  SETTLED
+  REFUNDED
 }
