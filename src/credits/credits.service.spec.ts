@@ -361,6 +361,26 @@ describe('CreditsService', () => {
       expect(prismaMock.aiUsageReservation.updateMany).not.toHaveBeenCalled();
       expect(prismaMock.user.update).not.toHaveBeenCalled();
     });
+
+    it('enforces the status=RESERVED guard in updateMany: when count=0, does not refund', async () => {
+      prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prismaMock));
+      prismaMock.aiUsageReservation.findUnique.mockResolvedValue({
+        id: 'res_1',
+        userId: 'user_1',
+        status: 'RESERVED',
+        estimatedCostRupees: new Prisma.Decimal('5'),
+      });
+      prismaMock.aiUsageReservation.updateMany.mockResolvedValue({ count: 0 });
+      const service = buildService();
+
+      await service.settleUsage('res_1', new Prisma.Decimal('2'));
+
+      expect(prismaMock.aiUsageReservation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'res_1', status: 'RESERVED' },
+        data: { status: 'SETTLED', actualCostRupees: expect.any(Prisma.Decimal), settledAt: expect.any(Date) },
+      });
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('refundUsage', () => {
@@ -402,6 +422,23 @@ describe('CreditsService', () => {
       await service.refundUsage('res_1');
 
       expect(prismaMock.user.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('enforces the status=RESERVED guard in updateMany: when count=0, does not refund', async () => {
+      prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prismaMock));
+      prismaMock.aiUsageReservation.findUnique.mockResolvedValue({
+        id: 'res_1', userId: 'user_1', status: 'RESERVED', estimatedCostRupees: new Prisma.Decimal('2.1'),
+      });
+      prismaMock.aiUsageReservation.updateMany.mockResolvedValue({ count: 0 });
+      const service = buildService();
+
+      await service.refundUsage('res_1');
+
+      expect(prismaMock.aiUsageReservation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'res_1', status: 'RESERVED' },
+        data: { status: 'REFUNDED', settledAt: expect.any(Date) },
+      });
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
     });
   });
 

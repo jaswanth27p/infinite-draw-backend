@@ -158,23 +158,38 @@ export class CreditsService {
 
     const estimateWholeRupees = Math.max(1, Math.ceil(estimateRupees.toNumber()));
 
-    return this.prisma.$transaction(async (tx) => {
-      // Conditional updateMany, not read-then-write: two concurrent reserves
-      // for the same user can't both pass a separate balance check and both
-      // decrement — Postgres serializes UPDATEs to the same row, so only
-      // enough concurrent reserves to actually cover the balance succeed.
-      const updated = await tx.user.updateMany({
-        where: { id: userId, creditBalance: { gte: estimateWholeRupees } },
-        data: { creditBalance: { decrement: estimateWholeRupees } },
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Conditional updateMany, not read-then-write: two concurrent reserves
+        // for the same user can't both pass a separate balance check and both
+        // decrement — Postgres serializes UPDATEs to the same row, so only
+        // enough concurrent reserves to actually cover the balance succeed.
+        const updated = await tx.user.updateMany({
+          where: { id: userId, creditBalance: { gte: estimateWholeRupees } },
+          data: { creditBalance: { decrement: estimateWholeRupees } },
+        });
+        if (updated.count === 0) {
+          throw new InsufficientCreditsException();
+        }
+        const reservation = await tx.aiUsageReservation.create({
+          data: { userId, requestId, estimatedCostRupees: estimateRupees, status: 'RESERVED' },
+        });
+        return { id: reservation.id, estimateWholeRupees };
       });
-      if (updated.count === 0) {
-        throw new InsufficientCreditsException();
+    } catch (err) {
+      // Handle concurrent identical requestId submissions: if both see existing=null
+      // and race into $transaction, the loser hits a P2002 unique constraint violation
+      // on requestId. Re-fetch and return the winner's reservation. This is idempotency
+      // (same requestId always returns the same result), and the loser's balance
+      // decrement rolls back automatically with the failed transaction.
+      if ((err as { code?: string }).code === 'P2002') {
+        const existing = await this.prisma.aiUsageReservation.findUnique({ where: { requestId } });
+        if (existing) {
+          return { id: existing.id, estimateWholeRupees: Math.max(1, Math.ceil(existing.estimatedCostRupees.toNumber())) };
+        }
       }
-      const reservation = await tx.aiUsageReservation.create({
-        data: { userId, requestId, estimatedCostRupees: estimateRupees, status: 'RESERVED' },
-      });
-      return { id: reservation.id, estimateWholeRupees };
-    });
+      throw err;
+    }
   }
 
   async settleUsage(reservationId: string, actualCostRupees: Prisma.Decimal): Promise<void> {
