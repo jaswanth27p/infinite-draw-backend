@@ -6,7 +6,7 @@ describe('AiUsageProcessor', () => {
     refundUsage: jest.fn(),
     sweepStaleReservations: jest.fn(),
   };
-  const queueMock = { add: jest.fn() };
+  const queueMock = { add: jest.fn(), upsertJobScheduler: jest.fn() };
 
   function buildProcessor() {
     return new AiUsageProcessor(creditsServiceMock as unknown as CreditsService, queueMock as never);
@@ -30,15 +30,15 @@ describe('AiUsageProcessor', () => {
     expect(creditsServiceMock.sweepStaleReservations).toHaveBeenCalledWith(5 * 60 * 1000);
   });
 
-  it('schedules the repeatable sweep job on module init with a fixed jobId', async () => {
+  it('schedules the repeatable sweep job on module init via a fixed jobSchedulerId', async () => {
     const processor = buildProcessor();
 
     await processor.onModuleInit();
 
-    expect(queueMock.add).toHaveBeenCalledWith(
-      'sweep-stale-reservations',
-      {},
-      { repeat: { every: 5 * 60 * 1000 }, jobId: 'ai-usage-sweep' },
+    expect(queueMock.upsertJobScheduler).toHaveBeenCalledWith(
+      'ai-usage-sweep',
+      { every: 5 * 60 * 1000 },
+      { name: 'sweep-stale-reservations', data: {} },
     );
   });
 });

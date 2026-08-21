@@ -16,12 +16,12 @@ export class AiUsageProcessor extends WorkerHost implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
-    // Fixed jobId makes this idempotent across restarts/deploys — BullMQ
-    // won't create a second repeatable job for the same id.
-    await this.queue.add(
-      'sweep-stale-reservations',
-      {},
-      { repeat: { every: SWEEP_INTERVAL_MS }, jobId: 'ai-usage-sweep' },
+    // Fixed jobSchedulerId makes this idempotent across restarts/deploys —
+    // BullMQ v6 upserts the scheduler rather than creating a duplicate.
+    await this.queue.upsertJobScheduler(
+      'ai-usage-sweep',
+      { every: SWEEP_INTERVAL_MS },
+      { name: 'sweep-stale-reservations', data: {} },
     );
   }
 
