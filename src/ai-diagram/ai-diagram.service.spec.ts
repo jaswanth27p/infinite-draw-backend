@@ -77,6 +77,16 @@ describe('AiDiagramService', () => {
       await expect(service.generate('user_1', 'req_1', 'a simple flow')).rejects.toThrow('provider timeout');
       expect(creditsServiceMock.refundUsage).toHaveBeenCalledWith('res_1');
     });
+
+    it('refunds and rethrows when enqueuing the delayed release job itself throws', async () => {
+      queueMock.add.mockRejectedValueOnce(new Error('redis blip'));
+      const service = buildService();
+
+      await expect(service.generate('user_1', 'req_1', 'a simple flow')).rejects.toThrow('redis blip');
+      expect(creditsServiceMock.refundUsage).toHaveBeenCalledWith('res_1');
+      expect(diagramAgent.generate).not.toHaveBeenCalled();
+      expect(creditsServiceMock.settleUsage).not.toHaveBeenCalled();
+    });
   });
 
   describe('modify', () => {

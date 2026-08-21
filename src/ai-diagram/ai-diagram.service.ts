@@ -59,13 +59,14 @@ export class AiDiagramService {
     const estimate = estimateCostRupees(prompt);
     const reservation = await this.creditsService.reserveUsage(userId, requestId, estimate);
     const releaseJobId = `release-${reservation.id}`;
-    await this.queue.add(
-      'release-stale-reservation',
-      { reservationId: reservation.id },
-      { delay: RESERVATION_RELEASE_DELAY_MS, jobId: releaseJobId },
-    );
 
     try {
+      await this.queue.add(
+        'release-stale-reservation',
+        { reservationId: reservation.id },
+        { delay: RESERVATION_RELEASE_DELAY_MS, jobId: releaseJobId },
+      );
+
       const result = await diagramAgent.generate(prompt, { modelSettings: { maxOutputTokens: MAX_OUTPUT_TOKENS } });
 
       const match = MERMAID_FENCE_RE.exec(result.text);
