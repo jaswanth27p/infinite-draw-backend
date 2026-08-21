@@ -24,6 +24,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1106.0",
     "@clerk/backend": "^3.16.1",
     "@clerk/express": "^2.1.52",
+    "@mastra/core": "^1.60.0",
     "@nestjs/bullmq": "^11.0.5",
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
@@ -40,7 +41,8 @@
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.3",
     "stripe": "^22.5.0",
-    "svix": "^1.99.1"
+    "svix": "^1.99.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
