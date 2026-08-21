@@ -438,7 +438,7 @@ describe('CollabGateway', () => {
       createdAt: new Date('2026-08-18T00:00:00Z'),
     };
 
-    it('creates a message and broadcasts it to the whole room, including the sender, at VIEWER floor', async () => {
+    it('creates a message, broadcasts it to the rest of the room (sender excluded) at VIEWER floor, and returns it as the ack', async () => {
       filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
       chatServiceMock.create.mockResolvedValue(message);
       gateway.server = createServerMock([]);
@@ -447,8 +447,12 @@ describe('CollabGateway', () => {
       const result = await gateway.handleSendChatMessage(client, { fileId: 'f1', body: 'hello' });
 
       expect(chatServiceMock.create).toHaveBeenCalledWith('f1', 'local_1', 'hello');
-      expect(gateway.server.to).toHaveBeenCalledWith('file:f1');
-      expect(gateway.server.emit).toHaveBeenCalledWith('chat-message', message);
+      // Sender excluded: `client.to(...)`, not `gateway.server.to(...)` —
+      // the sender learns of their own message only via the returned ack,
+      // so there's exactly one delivery path and nothing to race.
+      expect(client.to).toHaveBeenCalledWith('file:f1');
+      expect(client.emit).toHaveBeenCalledWith('chat-message', message);
+      expect(gateway.server.to).not.toHaveBeenCalled();
       expect(result).toEqual(message);
     });
 

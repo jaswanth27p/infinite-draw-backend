@@ -265,16 +265,20 @@ export class CollabGateway implements OnGatewayConnection {
       return;
     }
 
-    // Broadcast to the WHOLE room, including the sender — this is the one
-    // handler in this gateway that does, since the sender needs the
-    // server-assigned id/createdAt/authorName back rather than rendering
-    // an optimistic local echo it would have to reconcile later. Every
-    // other handler here uses `client.to(...)` (sender excluded) because
-    // the sender already has that state locally.
-    this.server.to(fileRoom(body.fileId)).emit('chat-message', message);
-    // Also returned as a Socket.IO ack to the sender only — the frontend
-    // uses this (not the broadcast) to learn which message ids are its
-    // own, since a client has no other way to resolve "my local user id"
+    // Sender excluded, like every other handler in this gateway: the
+    // sender gets the server-assigned id/createdAt/authorName via the ack
+    // (the `return` below), not this broadcast. Including the sender here
+    // used to be deliberate, but `client.emit`'s ack and this broadcast
+    // are two independent deliveries with no ordering guarantee between
+    // them — the sender's own message would render "not mine" (broadcast
+    // arrives first) and then flip to "mine" a moment later (ack arrives
+    // second), visibly jumping sides. Excluding the sender leaves exactly
+    // one delivery path for their own message, so there's nothing left to
+    // race.
+    client.to(fileRoom(body.fileId)).emit('chat-message', message);
+    // Returned as a Socket.IO ack to the sender only — the frontend uses
+    // this (not a broadcast) to learn which message ids are its own,
+    // since a client has no other way to resolve "my local user id"
     // client-side.
     return message;
   }
