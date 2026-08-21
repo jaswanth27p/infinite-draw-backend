@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { CreditsService } from './credits.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -21,7 +22,14 @@ describe('CreditsService', () => {
     },
     user: {
       update: jest.fn(),
+      updateMany: jest.fn(),
       findUniqueOrThrow: jest.fn(),
+    },
+    aiUsageReservation: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      updateMany: jest.fn(),
+      findMany: jest.fn(),
     },
     $transaction: jest.fn(),
   };
@@ -249,6 +257,171 @@ describe('CreditsService', () => {
         service.handleCheckoutCompleted(fractionalSession),
       ).resolves.toBeUndefined();
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reserveUsage', () => {
+    it('reserves by decrementing the rounded-up estimate and creating a RESERVED row inside one transaction', async () => {
+      prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prismaMock));
+      prismaMock.aiUsageReservation.findUnique.mockResolvedValue(null);
+      prismaMock.user.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.aiUsageReservation.create.mockResolvedValue({ id: 'res_1' });
+      const service = buildService();
+
+      const result = await service.reserveUsage('user_1', 'req_1', new Prisma.Decimal('2.3'));
+
+      expect(prismaMock.user.updateMany).toHaveBeenCalledWith({
+        where: { id: 'user_1', creditBalance: { gte: 3 } },
+        data: { creditBalance: { decrement: 3 } },
+      });
+      expect(prismaMock.aiUsageReservation.create).toHaveBeenCalledWith({
+        data: { userId: 'user_1', requestId: 'req_1', estimatedCostRupees: expect.any(Prisma.Decimal), status: 'RESERVED' },
+      });
+      expect(result).toEqual({ id: 'res_1', estimateWholeRupees: 3 });
+    });
+
+    it('rejects with a 402 InsufficientCreditsException when balance is insufficient, without creating a reservation', async () => {
+      prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prismaMock));
+      prismaMock.aiUsageReservation.findUnique.mockResolvedValue(null);
+      prismaMock.user.updateMany.mockResolvedValue({ count: 0 });
+      const service = buildService();
+
+      await expect(service.reserveUsage('user_1', 'req_1', new Prisma.Decimal('5'))).rejects.toMatchObject({
+        status: 402,
+      });
+      expect(prismaMock.aiUsageReservation.create).not.toHaveBeenCalled();
+    });
+
+    it('returns the existing reservation instead of double-reserving on a retried requestId', async () => {
+      prismaMock.aiUsageReservation.findUnique.mockResolvedValue({
+        id: 'res_existing',
+        estimatedCostRupees: new Prisma.Decimal('4'),
+      });
+      const service = buildService();
+
+      const result = await service.reserveUsage('user_1', 'req_1', new Prisma.Decimal('4'));
+
+      expect(result).toEqual({ id: 'res_existing', estimateWholeRupees: 4 });
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('settleUsage', () => {
+    it('settles, refunding the unused portion of the estimate rounded to whole rupees', async () => {
+      prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prismaMock));
+      prismaMock.aiUsageReservation.findUnique.mockResolvedValue({
+        id: 'res_1',
+        userId: 'user_1',
+        status: 'RESERVED',
+        estimatedCostRupees: new Prisma.Decimal('5'),
+      });
+      prismaMock.aiUsageReservation.updateMany.mockResolvedValue({ count: 1 });
+      const service = buildService();
+
+      await service.settleUsage('res_1', new Prisma.Decimal('2'));
+
+      expect(prismaMock.aiUsageReservation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'res_1', status: 'RESERVED' },
+        data: { status: 'SETTLED', actualCostRupees: expect.any(Prisma.Decimal), settledAt: expect.any(Date) },
+      });
+      expect(prismaMock.user.update).toHaveBeenCalledWith({
+        where: { id: 'user_1' },
+        data: { creditBalance: { increment: 3 } },
+      });
+    });
+
+    it('clamps actual cost to the estimate and issues no refund when actual meets or exceeds it', async () => {
+      prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prismaMock));
+      prismaMock.aiUsageReservation.findUnique.mockResolvedValue({
+        id: 'res_1',
+        userId: 'user_1',
+        status: 'RESERVED',
+        estimatedCostRupees: new Prisma.Decimal('3'),
+      });
+      prismaMock.aiUsageReservation.updateMany.mockResolvedValue({ count: 1 });
+      const service = buildService();
+
+      await service.settleUsage('res_1', new Prisma.Decimal('999'));
+
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op when the reservation is no longer RESERVED (double-settle guard)', async () => {
+      prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prismaMock));
+      prismaMock.aiUsageReservation.findUnique.mockResolvedValue({
+        id: 'res_1',
+        userId: 'user_1',
+        status: 'SETTLED',
+        estimatedCostRupees: new Prisma.Decimal('3'),
+      });
+      const service = buildService();
+
+      await service.settleUsage('res_1', new Prisma.Decimal('1'));
+
+      expect(prismaMock.aiUsageReservation.updateMany).not.toHaveBeenCalled();
+      expect(prismaMock.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('refundUsage', () => {
+    it('refunds the full rounded-up estimate and marks REFUNDED', async () => {
+      prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prismaMock));
+      prismaMock.aiUsageReservation.findUnique.mockResolvedValue({
+        id: 'res_1',
+        userId: 'user_1',
+        status: 'RESERVED',
+        estimatedCostRupees: new Prisma.Decimal('2.1'),
+      });
+      prismaMock.aiUsageReservation.updateMany.mockResolvedValue({ count: 1 });
+      const service = buildService();
+
+      await service.refundUsage('res_1');
+
+      expect(prismaMock.aiUsageReservation.updateMany).toHaveBeenCalledWith({
+        where: { id: 'res_1', status: 'RESERVED' },
+        data: { status: 'REFUNDED', settledAt: expect.any(Date) },
+      });
+      expect(prismaMock.user.update).toHaveBeenCalledWith({
+        where: { id: 'user_1' },
+        data: { creditBalance: { increment: 3 } },
+      });
+    });
+
+    it('is a safe no-op when called twice (idempotent)', async () => {
+      prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prismaMock));
+      prismaMock.aiUsageReservation.findUnique.mockResolvedValueOnce({
+        id: 'res_1', userId: 'user_1', status: 'RESERVED', estimatedCostRupees: new Prisma.Decimal('2'),
+      });
+      prismaMock.aiUsageReservation.updateMany.mockResolvedValueOnce({ count: 1 });
+      const service = buildService();
+      await service.refundUsage('res_1');
+
+      prismaMock.aiUsageReservation.findUnique.mockResolvedValueOnce({
+        id: 'res_1', userId: 'user_1', status: 'REFUNDED', estimatedCostRupees: new Prisma.Decimal('2'),
+      });
+      await service.refundUsage('res_1');
+
+      expect(prismaMock.user.update).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('sweepStaleReservations', () => {
+    it('refunds every RESERVED row older than the cutoff and returns the count', async () => {
+      prismaMock.aiUsageReservation.findMany.mockResolvedValue([{ id: 'res_1' }, { id: 'res_2' }]);
+      prismaMock.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(prismaMock));
+      prismaMock.aiUsageReservation.findUnique.mockResolvedValue({
+        id: 'res_1', userId: 'user_1', status: 'RESERVED', estimatedCostRupees: new Prisma.Decimal('1'),
+      });
+      prismaMock.aiUsageReservation.updateMany.mockResolvedValue({ count: 1 });
+      const service = buildService();
+
+      const count = await service.sweepStaleReservations(5 * 60 * 1000);
+
+      expect(prismaMock.aiUsageReservation.findMany).toHaveBeenCalledWith({
+        where: { status: 'RESERVED', createdAt: { lt: expect.any(Date) } },
+        select: { id: true },
+      });
+      expect(count).toBe(2);
     });
   });
 });

@@ -1,10 +1,17 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import Stripe from 'stripe';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { getCorsOrigins } from '../config/cors';
 
 const MIN_TOPUP_RUPEES = 100;
 const CURRENCY = 'inr';
+
+export class InsufficientCreditsException extends HttpException {
+  constructor() {
+    super('Insufficient credit balance', HttpStatus.PAYMENT_REQUIRED);
+  }
+}
 
 @Injectable()
 export class CreditsService {
@@ -137,5 +144,95 @@ export class CreditsService {
       }
       throw err;
     }
+  }
+
+  async reserveUsage(
+    userId: string,
+    requestId: string,
+    estimateRupees: Prisma.Decimal,
+  ): Promise<{ id: string; estimateWholeRupees: number }> {
+    const existing = await this.prisma.aiUsageReservation.findUnique({ where: { requestId } });
+    if (existing) {
+      return { id: existing.id, estimateWholeRupees: Math.max(1, Math.ceil(existing.estimatedCostRupees.toNumber())) };
+    }
+
+    const estimateWholeRupees = Math.max(1, Math.ceil(estimateRupees.toNumber()));
+
+    return this.prisma.$transaction(async (tx) => {
+      // Conditional updateMany, not read-then-write: two concurrent reserves
+      // for the same user can't both pass a separate balance check and both
+      // decrement — Postgres serializes UPDATEs to the same row, so only
+      // enough concurrent reserves to actually cover the balance succeed.
+      const updated = await tx.user.updateMany({
+        where: { id: userId, creditBalance: { gte: estimateWholeRupees } },
+        data: { creditBalance: { decrement: estimateWholeRupees } },
+      });
+      if (updated.count === 0) {
+        throw new InsufficientCreditsException();
+      }
+      const reservation = await tx.aiUsageReservation.create({
+        data: { userId, requestId, estimatedCostRupees: estimateRupees, status: 'RESERVED' },
+      });
+      return { id: reservation.id, estimateWholeRupees };
+    });
+  }
+
+  async settleUsage(reservationId: string, actualCostRupees: Prisma.Decimal): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const reservation = await tx.aiUsageReservation.findUnique({ where: { id: reservationId } });
+      if (!reservation || reservation.status !== 'RESERVED') return;
+
+      const estimateWhole = Math.max(1, Math.ceil(reservation.estimatedCostRupees.toNumber()));
+      const clampedActual = Prisma.Decimal.min(actualCostRupees, reservation.estimatedCostRupees);
+      const actualWhole = Math.min(estimateWhole, Math.max(0, Math.round(clampedActual.toNumber())));
+      const refundWhole = estimateWhole - actualWhole;
+
+      // Guarded on status='RESERVED' in the WHERE clause, not just the read
+      // above — this is the actual race guard (see reserveUsage's comment).
+      const updated = await tx.aiUsageReservation.updateMany({
+        where: { id: reservationId, status: 'RESERVED' },
+        data: { status: 'SETTLED', actualCostRupees: clampedActual, settledAt: new Date() },
+      });
+      if (updated.count === 0) return;
+
+      if (refundWhole > 0) {
+        await tx.user.update({
+          where: { id: reservation.userId },
+          data: { creditBalance: { increment: refundWhole } },
+        });
+      }
+    });
+  }
+
+  async refundUsage(reservationId: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const reservation = await tx.aiUsageReservation.findUnique({ where: { id: reservationId } });
+      if (!reservation || reservation.status !== 'RESERVED') return;
+
+      const estimateWhole = Math.max(1, Math.ceil(reservation.estimatedCostRupees.toNumber()));
+
+      const updated = await tx.aiUsageReservation.updateMany({
+        where: { id: reservationId, status: 'RESERVED' },
+        data: { status: 'REFUNDED', settledAt: new Date() },
+      });
+      if (updated.count === 0) return;
+
+      await tx.user.update({
+        where: { id: reservation.userId },
+        data: { creditBalance: { increment: estimateWhole } },
+      });
+    });
+  }
+
+  async sweepStaleReservations(olderThanMs: number): Promise<number> {
+    const cutoff = new Date(Date.now() - olderThanMs);
+    const stale = await this.prisma.aiUsageReservation.findMany({
+      where: { status: 'RESERVED', createdAt: { lt: cutoff } },
+      select: { id: true },
+    });
+    for (const { id } of stale) {
+      await this.refundUsage(id);
+    }
+    return stale.length;
   }
 }
