@@ -43,6 +43,11 @@ export class FilesController {
     return this.filesService.listStarred(userId);
   }
 
+  @Get('trash')
+  trash(@CurrentLocalUserId() userId: string) {
+    return this.filesService.listTrash(userId);
+  }
+
   @Get(':id')
   @UseGuards(FileAccessGuard)
   @RequireRole('VIEWER')
@@ -77,6 +82,14 @@ export class FilesController {
   @AllowDeleted()
   restore(@CurrentFileAccess() access: FileAccess) {
     return this.filesService.restore(access.file.id);
+  }
+
+  @Delete(':id/permanent')
+  @UseGuards(FileAccessGuard)
+  @RequireRole('OWNER')
+  @AllowDeleted()
+  permanentDelete(@CurrentFileAccess() access: FileAccess) {
+    return this.filesService.permanentDelete(access.file.id);
   }
 
   @Post(':id/star')

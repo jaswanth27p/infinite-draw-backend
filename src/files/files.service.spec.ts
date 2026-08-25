@@ -11,6 +11,7 @@ describe('FilesService', () => {
       create: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
+      delete: jest.fn(),
     },
     share: {
       findUnique: jest.fn(),
@@ -414,5 +415,41 @@ describe('FilesService', () => {
         starred: true,
       },
     ]);
+  });
+
+  describe('listTrash / permanentDelete', () => {
+    it("listTrash returns only the owner's soft-deleted files, most recently deleted first", async () => {
+      const service = await buildService();
+      prismaMock.file.findMany.mockResolvedValue([
+        { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), deletedAt: new Date('2026-01-02') },
+      ]);
+
+      const result = await service.listTrash('owner_1');
+
+      expect(result).toEqual([
+        { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), deletedAt: new Date('2026-01-02') },
+      ]);
+      expect(prismaMock.file.findMany).toHaveBeenCalledWith({
+        where: { ownerId: 'owner_1', deletedAt: { not: null } },
+        orderBy: { deletedAt: 'desc' },
+        select: expect.objectContaining({
+          id: true,
+          name: true,
+          thumbnailUrl: true,
+          updatedAt: true,
+          deletedAt: true,
+        }),
+      });
+    });
+
+    it('permanentDelete hard-deletes the file row (cascades handle versions/shares/messages/stars) without re-checking ownership (guard-gated via OWNER + AllowDeleted)', async () => {
+      const service = await buildService();
+      prismaMock.file.delete.mockResolvedValue({ id: 'f1' });
+
+      await service.permanentDelete('f1');
+
+      expect(prismaMock.file.delete).toHaveBeenCalledWith({ where: { id: 'f1' } });
+      expect(prismaMock.file.findFirst).not.toHaveBeenCalled();
+    });
   });
 });

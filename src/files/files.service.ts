@@ -195,4 +195,16 @@ export class FilesService {
     });
     return stars.map((s) => ({ ...s.file, starred: true }));
   }
+
+  listTrash(ownerId: string) {
+    return this.prisma.file.findMany({
+      where: { ownerId, deletedAt: { not: null } },
+      orderBy: { deletedAt: 'desc' },
+      select: { ...FILE_LIST_SELECT, deletedAt: true },
+    });
+  }
+
+  permanentDelete(id: string) {
+    return this.prisma.file.delete({ where: { id } });
+  }
 }
