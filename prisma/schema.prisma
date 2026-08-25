@@ -30,9 +30,14 @@ model User {
   email     String   @unique
   name      String?
   avatarUrl String?
+  notifyFileShared           Boolean @default(true)
+  notifyRoleChanged          Boolean @default(true)
+  notifyAccessRemoved        Boolean @default(true)
+  notifyGeneralAccessChanged Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   files     File[]
+  stars     Star[]
   shares    Share[]
   notificationsReceived Notification[] @relation("NotificationRecipient")
   notificationsActed    Notification[] @relation("NotificationActor")
@@ -56,6 +61,7 @@ model File {
   updatedAt         DateTime      @updatedAt
   versions          FileVersion[]
   shares            Share[]
+  stars             Star[]
   messages          Message[]
 
   @@index([ownerId, deletedAt])
@@ -71,6 +77,18 @@ model FileVersion {
   createdAt    DateTime @default(now())
 
   @@index([fileId, createdAt])
+}
+
+model Star {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileId    String
+  file      File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, fileId])
+  @@index([userId])
 }
 
 model Share {
