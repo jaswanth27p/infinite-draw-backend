@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { GeneralAccess, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -187,9 +187,24 @@ export class FilesService {
     return this.prisma.star.deleteMany({ where: { userId, fileId } });
   }
 
+  // Filters on the caller's current access, not just their own past act of
+  // starring — without this, a Star row outlives the Share/general-access
+  // grant that justified it (e.g. after SharesService#remove, or after an
+  // owner flips generalAccess back to RESTRICTED), and the ex-collaborator
+  // keeps seeing the file's name/thumbnail on this list indefinitely.
   async listStarred(userId: string) {
     const stars = await this.prisma.star.findMany({
-      where: { userId, file: { deletedAt: null } },
+      where: {
+        userId,
+        file: {
+          deletedAt: null,
+          OR: [
+            { ownerId: userId },
+            { shares: { some: { userId } } },
+            { generalAccess: GeneralAccess.ANYONE, generalAccessRole: { not: null } },
+          ],
+        },
+      },
       select: { file: { select: FILE_LIST_SELECT } },
       orderBy: { createdAt: 'desc' },
     });
@@ -204,7 +219,18 @@ export class FilesService {
     });
   }
 
-  permanentDelete(id: string) {
-    return this.prisma.file.delete({ where: { id } });
+  // @AllowDeleted() on the controller route means getAccess() resolves this
+  // id whether or not the file is actually soft-deleted — deleteMany's own
+  // deletedAt: { not: null } filter is what actually enforces "only a
+  // trashed file can be destroyed forever," not the guard chain. Without
+  // this, DELETE /files/:id/permanent would hard-delete a live file the
+  // owner never trashed, bypassing Trash's entire safety net.
+  async permanentDelete(id: string) {
+    const { count } = await this.prisma.file.deleteMany({
+      where: { id, deletedAt: { not: null } },
+    });
+    if (count === 0) {
+      throw new NotFoundException('File not found in trash');
+    }
   }
 }

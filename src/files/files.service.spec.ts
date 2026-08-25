@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FilesService } from './files.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,6 +12,7 @@ describe('FilesService', () => {
       findFirst: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      deleteMany: jest.fn(),
     },
     share: {
       findUnique: jest.fn(),
@@ -355,7 +356,17 @@ describe('FilesService', () => {
         { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), starred: true },
       ]);
       expect(prismaMock.star.findMany).toHaveBeenCalledWith({
-        where: { userId: 'user_1', file: { deletedAt: null } },
+        where: {
+          userId: 'user_1',
+          file: {
+            deletedAt: null,
+            OR: [
+              { ownerId: 'user_1' },
+              { shares: { some: { userId: 'user_1' } } },
+              { generalAccess: 'ANYONE', generalAccessRole: { not: null } },
+            ],
+          },
+        },
         select: {
           file: {
             select: { id: true, name: true, thumbnailUrl: true, updatedAt: true },
@@ -442,14 +453,23 @@ describe('FilesService', () => {
       });
     });
 
-    it('permanentDelete hard-deletes the file row (cascades handle versions/shares/messages/stars) without re-checking ownership (guard-gated via OWNER + AllowDeleted)', async () => {
+    it('permanentDelete hard-deletes the file row only if it is actually soft-deleted (cascades handle versions/shares/messages/stars) without re-checking ownership (guard-gated via OWNER + AllowDeleted)', async () => {
       const service = await buildService();
-      prismaMock.file.delete.mockResolvedValue({ id: 'f1' });
+      prismaMock.file.deleteMany.mockResolvedValue({ count: 1 });
 
       await service.permanentDelete('f1');
 
-      expect(prismaMock.file.delete).toHaveBeenCalledWith({ where: { id: 'f1' } });
+      expect(prismaMock.file.deleteMany).toHaveBeenCalledWith({
+        where: { id: 'f1', deletedAt: { not: null } },
+      });
       expect(prismaMock.file.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('permanentDelete throws NotFoundException instead of silently no-op-ing when the file is not actually in the trash — @AllowDeleted() lets a live file resolve access, so the deletedAt filter here is the only thing stopping a live file from being destroyed', async () => {
+      const service = await buildService();
+      prismaMock.file.deleteMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.permanentDelete('f1')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });
