@@ -20,7 +20,7 @@ export class CreditsController {
     @CurrentLocalUserId() userId: string,
     @Body() body: { amountRupees: number },
   ) {
-    return this.creditsService.createTopupCheckoutSession(
+    return this.creditsService.createRazorpayOrder(
       userId,
       body.amountRupees,
     );

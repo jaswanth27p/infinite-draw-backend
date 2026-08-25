@@ -1,11 +1,19 @@
 import { BadRequestException, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
-import Stripe from 'stripe';
+import Razorpay from 'razorpay';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { getCorsOrigins } from '../config/cors';
 
 const MIN_TOPUP_RUPEES = 100;
-const CURRENCY = 'inr';
+const CURRENCY = 'INR';
+
+export interface RazorpayPaymentEntity {
+  id: string;
+  order_id: string;
+  status: string;
+  currency: string;
+  amount: number;
+  notes?: Record<string, string>;
+}
 
 export class InsufficientCreditsException extends HttpException {
   constructor() {
@@ -16,10 +24,13 @@ export class InsufficientCreditsException extends HttpException {
 @Injectable()
 export class CreditsService {
   private readonly logger = new Logger(CreditsService.name);
-  private readonly stripe: Stripe;
+  private readonly razorpay: Razorpay;
 
   constructor(private readonly prisma: PrismaService) {
-    this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
+    this.razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID as string,
+      key_secret: process.env.RAZORPAY_KEY_SECRET as string,
+    });
   }
 
   async getBalance(userId: string): Promise<number> {
@@ -30,91 +41,70 @@ export class CreditsService {
     return user.creditBalance;
   }
 
-  async createTopupCheckoutSession(
+  async createRazorpayOrder(
     userId: string,
     amountRupees: number,
-  ): Promise<{ url: string }> {
+  ): Promise<{ orderId: string; amount: number; currency: string; keyId: string }> {
     if (!Number.isInteger(amountRupees) || amountRupees < MIN_TOPUP_RUPEES) {
       throw new BadRequestException(
         `amountRupees must be an integer of at least ${MIN_TOPUP_RUPEES}`,
       );
     }
 
-    // Reuses CORS_ORIGIN (via getCorsOrigins()) as the single "where does the
-    // frontend live" source of truth, instead of introducing a second,
-    // undocumented APP_URL variable for the same concept.
-    const corsOrigins = getCorsOrigins();
-    const appUrl = Array.isArray(corsOrigins) ? corsOrigins[0] : corsOrigins;
-    const session = await this.stripe.checkout.sessions.create({
-      mode: 'payment',
-      client_reference_id: userId,
-      line_items: [
-        {
-          quantity: 1,
-          price_data: {
-            currency: CURRENCY,
-            unit_amount: amountRupees * 100,
-            product_data: { name: `${amountRupees} credits` },
-          },
-        },
-      ],
-      success_url: `${appUrl}/?checkout=success`,
-      cancel_url: `${appUrl}/?checkout=cancelled`,
+    // `notes.userId` is how handlePaymentCaptured() later identifies whose
+    // balance to credit — Razorpay's payment.captured webhook payload has
+    // no equivalent to Stripe Checkout Session's built-in
+    // client_reference_id, but it does echo back the order's notes.
+    const order = await this.razorpay.orders.create({
+      amount: amountRupees * 100,
+      currency: CURRENCY,
+      receipt: `topup_${userId}_${Date.now()}`,
+      notes: { userId },
     });
 
-    if (!session.url) {
-      throw new Error(
-        `Stripe Checkout Session ${session.id} was created without a redirect url`,
-      );
-    }
-
-    return { url: session.url };
+    return {
+      orderId: order.id,
+      amount: amountRupees * 100,
+      currency: CURRENCY,
+      keyId: process.env.RAZORPAY_KEY_ID as string,
+    };
   }
 
-  async handleCheckoutCompleted(
-    session: Stripe.Checkout.Session,
-  ): Promise<void> {
-    const userId = session.client_reference_id;
-    if (!userId) {
-      this.logger.warn(
-        `Checkout session ${session.id} has no client_reference_id, skipping`,
-      );
-      return;
-    }
-
-    if (session.payment_status !== 'paid') {
+  async handlePaymentCaptured(entity: RazorpayPaymentEntity): Promise<void> {
+    if (entity.status !== 'captured') {
       this.logger.log(
-        `Checkout session ${session.id} is not paid yet (payment_status=${session.payment_status}), skipping until it settles`,
+        `Payment ${entity.id} has status ${entity.status}, not captured, skipping`,
       );
       return;
     }
 
-    if (session.amount_total == null) {
+    if (entity.currency !== CURRENCY) {
       this.logger.warn(
-        `Checkout session ${session.id} has no amount_total, skipping`,
+        `Payment ${entity.id} has unexpected currency ${entity.currency}, expected ${CURRENCY}, skipping`,
       );
       return;
     }
 
-    if (session.currency !== CURRENCY) {
-      this.logger.warn(
-        `Checkout session ${session.id} has unexpected currency ${session.currency}, expected ${CURRENCY}, skipping`,
-      );
-      return;
-    }
-
-    const amountRupees = session.amount_total / 100;
+    const amountRupees = entity.amount / 100;
     if (!Number.isInteger(amountRupees)) {
       this.logger.warn(
-        `Checkout session ${session.id} has amount_total ${session.amount_total} ${session.currency} which is not a whole number of rupees, skipping`,
+        `Payment ${entity.id} has amount ${entity.amount} ${entity.currency} which is not a whole number of rupees, skipping`,
       );
       return;
     }
 
-    const paymentIntentId =
-      typeof session.payment_intent === 'string'
-        ? session.payment_intent
-        : null;
+    if (!entity.order_id) {
+      this.logger.warn(`Payment ${entity.id} has no order_id, skipping`);
+      return;
+    }
+
+    const userId = entity.notes?.userId;
+    if (!userId) {
+      this.logger.warn(
+        `Payment ${entity.id} (order ${entity.order_id}) has no notes.userId, skipping`,
+      );
+      return;
+    }
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -122,8 +112,8 @@ export class CreditsService {
           data: {
             userId,
             amountRupees,
-            stripeCheckoutSessionId: session.id,
-            stripePaymentIntentId: paymentIntentId,
+            razorpayOrderId: entity.order_id,
+            razorpayPaymentId: entity.id,
           },
         });
         await tx.user.update({
@@ -132,14 +122,12 @@ export class CreditsService {
         });
       });
     } catch (err) {
-      // A retried webhook delivery for an already-processed session hits
-      // the unique constraint on stripeCheckoutSessionId — expected, not
-      // an error. Any other failure (a real DB outage, etc.) rethrows so
-      // Stripe's own retry mechanism gets a chance to redeliver later.
+      // A retried webhook delivery for an already-processed order hits
+      // the unique constraint on razorpayOrderId — expected, not an
+      // error. Any other failure (a real DB outage, etc.) rethrows so
+      // Razorpay's own retry mechanism gets a chance to redeliver later.
       if ((err as { code?: string }).code === 'P2002') {
-        this.logger.warn(
-          `Checkout session ${session.id} already processed, skipping`,
-        );
+        this.logger.warn(`Order ${entity.order_id} already processed, skipping`);
         return;
       }
       throw err;

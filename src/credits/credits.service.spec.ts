@@ -3,14 +3,12 @@ import { Prisma } from '@prisma/client';
 import { CreditsService } from './credits.service';
 import { PrismaService } from '../prisma/prisma.service';
 
-const mockCreate = jest.fn();
+const mockOrdersCreate = jest.fn();
 
-jest.mock('stripe', () => {
+jest.mock('razorpay', () => {
   return jest.fn().mockImplementation(() => ({
-    checkout: {
-      sessions: {
-        create: mockCreate,
-      },
+    orders: {
+      create: mockOrdersCreate,
     },
   }));
 });
@@ -40,7 +38,8 @@ describe('CreditsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.STRIPE_SECRET_KEY = 'sk_test_xxx';
+    process.env.RAZORPAY_KEY_ID = 'rzp_test_key_id';
+    process.env.RAZORPAY_KEY_SECRET = 'rzp_test_key_secret';
   });
 
   describe('getBalance', () => {
@@ -60,90 +59,78 @@ describe('CreditsService', () => {
     });
   });
 
-  describe('createTopupCheckoutSession', () => {
-    it('creates a one-time INR Checkout Session with the computed paise amount and the caller as client_reference_id', async () => {
-      mockCreate.mockResolvedValue({
-        url: 'https://checkout.stripe.com/session123',
+  describe('createRazorpayOrder', () => {
+    it('creates a Razorpay order with the paise amount, INR currency, and the caller in notes', async () => {
+      mockOrdersCreate.mockResolvedValue({
+        id: 'order_test123',
+        amount: 25000,
+        currency: 'INR',
       });
       const service = buildService();
 
-      const result = await service.createTopupCheckoutSession('user_1', 250);
+      const result = await service.createRazorpayOrder('user_1', 250);
 
-      expect(mockCreate).toHaveBeenCalledWith(
+      expect(mockOrdersCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          mode: 'payment',
-          client_reference_id: 'user_1',
-          line_items: [
-            expect.objectContaining({
-              quantity: 1,
-              price_data: expect.objectContaining({
-                currency: 'inr',
-                unit_amount: 25000,
-              }),
-            }),
-          ],
+          amount: 25000,
+          currency: 'INR',
+          notes: { userId: 'user_1' },
         }),
       );
-      expect(result).toEqual({ url: 'https://checkout.stripe.com/session123' });
+      expect(result).toEqual({
+        orderId: 'order_test123',
+        amount: 25000,
+        currency: 'INR',
+        keyId: 'rzp_test_key_id',
+      });
     });
 
     it('accepts the minimum amount of exactly 100', async () => {
-      mockCreate.mockResolvedValue({
-        url: 'https://checkout.stripe.com/session456',
-      });
+      mockOrdersCreate.mockResolvedValue({ id: 'order_test456', amount: 10000, currency: 'INR' });
       const service = buildService();
 
       await expect(
-        service.createTopupCheckoutSession('user_1', 100),
+        service.createRazorpayOrder('user_1', 100),
       ).resolves.toBeDefined();
     });
 
-    it('rejects an amount below 100 without calling Stripe', async () => {
+    it('rejects an amount below 100 without calling Razorpay', async () => {
       const service = buildService();
 
       await expect(
-        service.createTopupCheckoutSession('user_1', 99),
+        service.createRazorpayOrder('user_1', 99),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockOrdersCreate).not.toHaveBeenCalled();
     });
 
-    it('rejects a non-integer amount without calling Stripe', async () => {
+    it('rejects a non-integer amount without calling Razorpay', async () => {
       const service = buildService();
 
       await expect(
-        service.createTopupCheckoutSession('user_1', 100.5),
+        service.createRazorpayOrder('user_1', 100.5),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockOrdersCreate).not.toHaveBeenCalled();
     });
 
-    it('rejects a negative amount without calling Stripe', async () => {
+    it('rejects a negative amount without calling Razorpay', async () => {
       const service = buildService();
 
       await expect(
-        service.createTopupCheckoutSession('user_1', -50),
+        service.createRazorpayOrder('user_1', -50),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(mockCreate).not.toHaveBeenCalled();
-    });
-
-    it('throws instead of returning a broken url when Stripe returns a session with no url', async () => {
-      mockCreate.mockResolvedValue({ id: 'cs_test_no_url', url: null });
-      const service = buildService();
-
-      await expect(
-        service.createTopupCheckoutSession('user_1', 100),
-      ).rejects.toThrow(/cs_test_no_url/);
+      expect(mockOrdersCreate).not.toHaveBeenCalled();
     });
   });
 
-  describe('handleCheckoutCompleted', () => {
-    const session = {
-      id: 'cs_test_1',
-      client_reference_id: 'user_1',
-      payment_status: 'paid',
-      currency: 'inr',
-      amount_total: 25000,
-      payment_intent: 'pi_test_1',
-    } as unknown as import('stripe').default.Checkout.Session;
+  describe('handlePaymentCaptured', () => {
+    const entity = {
+      id: 'pay_test_1',
+      order_id: 'order_test_1',
+      status: 'captured',
+      currency: 'INR',
+      amount: 25000,
+      notes: { userId: 'user_1' },
+    };
 
     it('creates a CreditTopup row and increments the balance inside one transaction', async () => {
       prismaMock.$transaction.mockImplementation(
@@ -153,15 +140,15 @@ describe('CreditsService', () => {
       prismaMock.user.update.mockResolvedValue({ id: 'user_1' });
       const service = buildService();
 
-      await service.handleCheckoutCompleted(session);
+      await service.handlePaymentCaptured(entity);
 
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
       expect(prismaMock.creditTopup.create).toHaveBeenCalledWith({
         data: {
           userId: 'user_1',
           amountRupees: 250,
-          stripeCheckoutSessionId: 'cs_test_1',
-          stripePaymentIntentId: 'pi_test_1',
+          razorpayOrderId: 'order_test_1',
+          razorpayPaymentId: 'pay_test_1',
         },
       });
       expect(prismaMock.user.update).toHaveBeenCalledWith({
@@ -170,91 +157,62 @@ describe('CreditsService', () => {
       });
     });
 
-    it('swallows a duplicate stripeCheckoutSessionId (P2002) instead of throwing', async () => {
-      const duplicateError = Object.assign(
-        new Error('Unique constraint failed'),
-        {
-          code: 'P2002',
-        },
-      );
+    it('swallows a duplicate razorpayOrderId (P2002) instead of throwing', async () => {
+      const duplicateError = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
       prismaMock.$transaction.mockRejectedValue(duplicateError);
       const service = buildService();
 
-      await expect(
-        service.handleCheckoutCompleted(session),
-      ).resolves.toBeUndefined();
+      await expect(service.handlePaymentCaptured(entity)).resolves.toBeUndefined();
     });
 
     it('rethrows a non-P2002 error', async () => {
       prismaMock.$transaction.mockRejectedValue(new Error('connection lost'));
       const service = buildService();
 
-      await expect(service.handleCheckoutCompleted(session)).rejects.toThrow(
-        'connection lost',
-      );
+      await expect(service.handlePaymentCaptured(entity)).rejects.toThrow('connection lost');
     });
 
-    it('logs and returns without touching the database when client_reference_id is missing', async () => {
+    it('logs and returns without touching the database when status is not captured', async () => {
       const service = buildService();
-      const orphanSession = {
-        ...session,
-        client_reference_id: null,
-      } as unknown as import('stripe').default.Checkout.Session;
 
       await expect(
-        service.handleCheckoutCompleted(orphanSession),
+        service.handlePaymentCaptured({ ...entity, status: 'authorized' }),
       ).resolves.toBeUndefined();
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
 
-    it('logs and returns without touching the database when payment_status is not paid', async () => {
+    it('logs and returns without touching the database when the currency is not INR', async () => {
       const service = buildService();
-      const pendingSession = {
-        ...session,
-        payment_status: 'unpaid',
-      } as unknown as import('stripe').default.Checkout.Session;
 
       await expect(
-        service.handleCheckoutCompleted(pendingSession),
+        service.handlePaymentCaptured({ ...entity, currency: 'USD' }),
       ).resolves.toBeUndefined();
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
 
-    it('logs and returns without touching the database when amount_total is null', async () => {
+    it('logs and returns without touching the database when amount is not a whole number of rupees', async () => {
       const service = buildService();
-      const noTotalSession = {
-        ...session,
-        amount_total: null,
-      } as unknown as import('stripe').default.Checkout.Session;
 
       await expect(
-        service.handleCheckoutCompleted(noTotalSession),
+        service.handlePaymentCaptured({ ...entity, amount: 12345 }),
       ).resolves.toBeUndefined();
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
 
-    it('logs and returns without touching the database when the currency is not inr', async () => {
+    it('logs and returns without touching the database when order_id is missing', async () => {
       const service = buildService();
-      const wrongCurrencySession = {
-        ...session,
-        currency: 'usd',
-      } as unknown as import('stripe').default.Checkout.Session;
 
       await expect(
-        service.handleCheckoutCompleted(wrongCurrencySession),
+        service.handlePaymentCaptured({ ...entity, order_id: '' }),
       ).resolves.toBeUndefined();
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
 
-    it('logs and returns without touching the database when amount_total is not a whole number of rupees', async () => {
+    it('logs and returns without touching the database when notes.userId is missing', async () => {
       const service = buildService();
-      const fractionalSession = {
-        ...session,
-        amount_total: 12345, // 123.45 rupees — not a whole number
-      } as unknown as import('stripe').default.Checkout.Session;
 
       await expect(
-        service.handleCheckoutCompleted(fractionalSession),
+        service.handlePaymentCaptured({ ...entity, notes: {} }),
       ).resolves.toBeUndefined();
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
