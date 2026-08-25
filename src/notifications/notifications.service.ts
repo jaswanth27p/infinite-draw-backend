@@ -63,9 +63,14 @@ export class NotificationsService {
     const preferenceColumn = PREFERENCE_COLUMN_BY_TYPE[input.type];
     const recipient = await this.prisma.user.findUnique({
       where: { id: input.recipientId },
-      select: { [preferenceColumn]: true },
+      select: {
+        notifyFileShared: true,
+        notifyRoleChanged: true,
+        notifyAccessRemoved: true,
+        notifyGeneralAccessChanged: true,
+      },
     });
-    if (recipient && (recipient as unknown as Record<string, boolean>)[preferenceColumn] === false) {
+    if (recipient && recipient[preferenceColumn] === false) {
       return;
     }
 

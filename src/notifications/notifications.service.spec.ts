@@ -168,14 +168,24 @@ describe('NotificationsService', () => {
 
       expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
         where: { id: 'user_2' },
-        select: { notifyFileShared: true },
+        select: {
+          notifyFileShared: true,
+          notifyRoleChanged: true,
+          notifyAccessRemoved: true,
+          notifyGeneralAccessChanged: true,
+        },
       });
       expect(prismaMock.notification.create).not.toHaveBeenCalled();
       expect(gatewayMock.server.to).not.toHaveBeenCalled();
     });
 
     it('still creates and emits when the recipient has that notification type enabled (the default)', async () => {
-      prismaMock.user.findUnique.mockResolvedValue({ notifyFileShared: true });
+      prismaMock.user.findUnique.mockResolvedValue({
+        notifyFileShared: true,
+        notifyRoleChanged: true,
+        notifyAccessRemoved: true,
+        notifyGeneralAccessChanged: true,
+      });
       prismaMock.notification.create.mockResolvedValue(row);
       const service = buildService();
 
