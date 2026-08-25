@@ -15,6 +15,7 @@ import { ChatModule } from './chat/chat.module';
 import { VoiceModule } from './voice/voice.module';
 import { CreditsModule } from './credits/credits.module';
 import { AiDiagramModule } from './ai-diagram/ai-diagram.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { AiDiagramModule } from './ai-diagram/ai-diagram.module';
     VoiceModule,
     CreditsModule,
     AiDiagramModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
