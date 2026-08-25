@@ -16,6 +16,11 @@ describe('FilesService', () => {
       findUnique: jest.fn(),
       findMany: jest.fn(),
     },
+    star: {
+      upsert: jest.fn(),
+      deleteMany: jest.fn(),
+      findMany: jest.fn(),
+    },
   };
   const notificationsServiceMock = { create: jest.fn() };
 
@@ -35,10 +40,11 @@ describe('FilesService', () => {
   it("lists only the owner's non-deleted files", async () => {
     const service = await buildService();
     prismaMock.file.findMany.mockResolvedValue([{ id: 'f1' }]);
+    prismaMock.star.findMany.mockResolvedValue([]);
 
     const result = await service.list('owner_1');
 
-    expect(result).toEqual([{ id: 'f1' }]);
+    expect(result).toEqual([{ id: 'f1', starred: false }]);
     expect(prismaMock.file.findMany).toHaveBeenCalledWith({
       where: { ownerId: 'owner_1', deletedAt: null },
       orderBy: { updatedAt: 'desc' },
@@ -278,6 +284,7 @@ describe('FilesService', () => {
         },
       },
     ]);
+    prismaMock.star.findMany.mockResolvedValue([]);
 
     const result = await service.listShared('user_2');
 
@@ -289,6 +296,7 @@ describe('FilesService', () => {
         updatedAt: new Date('2026-01-01'),
         role: 'EDITOR',
         owner: { name: 'Alice', email: 'alice@x.com' },
+        starred: false,
       },
     ]);
     expect(prismaMock.share.findMany).toHaveBeenCalledWith({
@@ -307,5 +315,104 @@ describe('FilesService', () => {
       },
       orderBy: { file: { updatedAt: 'desc' } },
     });
+  });
+
+  describe('star / unstar / listStarred', () => {
+    it('star upserts a Star row keyed on (userId, fileId), idempotently', async () => {
+      const service = await buildService();
+      prismaMock.star.upsert.mockResolvedValue({ id: 's1', userId: 'user_1', fileId: 'f1' });
+
+      await service.star('user_1', 'f1');
+
+      expect(prismaMock.star.upsert).toHaveBeenCalledWith({
+        where: { userId_fileId: { userId: 'user_1', fileId: 'f1' } },
+        create: { userId: 'user_1', fileId: 'f1' },
+        update: {},
+      });
+    });
+
+    it('unstar deletes via deleteMany so unstarring an already-unstarred file is a no-op, not an error', async () => {
+      const service = await buildService();
+      prismaMock.star.deleteMany.mockResolvedValue({ count: 0 });
+
+      await service.unstar('user_1', 'f1');
+
+      expect(prismaMock.star.deleteMany).toHaveBeenCalledWith({
+        where: { userId: 'user_1', fileId: 'f1' },
+      });
+    });
+
+    it('listStarred returns only the given user\'s starred, non-deleted files, most recently starred first', async () => {
+      const service = await buildService();
+      prismaMock.star.findMany.mockResolvedValue([
+        { file: { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01') } },
+      ]);
+
+      const result = await service.listStarred('user_1');
+
+      expect(result).toEqual([
+        { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), starred: true },
+      ]);
+      expect(prismaMock.star.findMany).toHaveBeenCalledWith({
+        where: { userId: 'user_1', file: { deletedAt: null } },
+        select: {
+          file: {
+            select: { id: true, name: true, thumbnailUrl: true, updatedAt: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    });
+  });
+
+  it('list marks each file starred/not-starred without an N+1 query (one batched star lookup)', async () => {
+    const service = await buildService();
+    prismaMock.file.findMany.mockResolvedValue([
+      { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01') },
+      { id: 'f2', name: 'B', thumbnailUrl: null, updatedAt: new Date('2026-01-01') },
+    ]);
+    prismaMock.star.findMany.mockResolvedValue([{ fileId: 'f1' }]);
+
+    const result = await service.list('owner_1');
+
+    expect(result).toEqual([
+      { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), starred: true },
+      { id: 'f2', name: 'B', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), starred: false },
+    ]);
+    expect(prismaMock.star.findMany).toHaveBeenCalledWith({
+      where: { userId: 'owner_1', fileId: { in: ['f1', 'f2'] } },
+      select: { fileId: true },
+    });
+  });
+
+  it('listShared also marks each file starred/not-starred', async () => {
+    const service = await buildService();
+    prismaMock.share.findMany.mockResolvedValue([
+      {
+        role: 'EDITOR',
+        file: {
+          id: 'f9',
+          name: 'Shared file',
+          thumbnailUrl: null,
+          updatedAt: new Date('2026-01-01'),
+          owner: { name: 'Alice', email: 'alice@x.com' },
+        },
+      },
+    ]);
+    prismaMock.star.findMany.mockResolvedValue([{ fileId: 'f9' }]);
+
+    const result = await service.listShared('user_2');
+
+    expect(result).toEqual([
+      {
+        id: 'f9',
+        name: 'Shared file',
+        thumbnailUrl: null,
+        updatedAt: new Date('2026-01-01'),
+        role: 'EDITOR',
+        owner: { name: 'Alice', email: 'alice@x.com' },
+        starred: true,
+      },
+    ]);
   });
 });

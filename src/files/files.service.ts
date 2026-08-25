@@ -20,12 +20,28 @@ export class FilesService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
-  list(ownerId: string) {
-    return this.prisma.file.findMany({
+  private async withStarred<T extends { id: string }>(
+    userId: string,
+    files: T[],
+  ): Promise<(T & { starred: boolean })[]> {
+    if (files.length === 0) {
+      return [];
+    }
+    const stars = await this.prisma.star.findMany({
+      where: { userId, fileId: { in: files.map((f) => f.id) } },
+      select: { fileId: true },
+    });
+    const starredIds = new Set(stars.map((s) => s.fileId));
+    return files.map((f) => ({ ...f, starred: starredIds.has(f.id) }));
+  }
+
+  async list(ownerId: string) {
+    const files = await this.prisma.file.findMany({
       where: { ownerId, deletedAt: null },
       orderBy: { updatedAt: 'desc' },
       select: FILE_LIST_SELECT,
     });
+    return this.withStarred(ownerId, files);
   }
 
   create(ownerId: string) {
@@ -125,14 +141,17 @@ export class FilesService {
         orderBy: { file: { updatedAt: 'desc' } },
       })
       .then((shares) =>
-        shares.map((s) => ({
-          id: s.file.id,
-          name: s.file.name,
-          thumbnailUrl: s.file.thumbnailUrl,
-          updatedAt: s.file.updatedAt,
-          role: s.role,
-          owner: s.file.owner,
-        })),
+        this.withStarred(
+          userId,
+          shares.map((s) => ({
+            id: s.file.id,
+            name: s.file.name,
+            thumbnailUrl: s.file.thumbnailUrl,
+            updatedAt: s.file.updatedAt,
+            role: s.role,
+            owner: s.file.owner,
+          })),
+        ),
       );
   }
 
@@ -154,5 +173,26 @@ export class FilesService {
       file: { id: file.id, name: file.name },
     });
     return file;
+  }
+
+  star(userId: string, fileId: string) {
+    return this.prisma.star.upsert({
+      where: { userId_fileId: { userId, fileId } },
+      create: { userId, fileId },
+      update: {},
+    });
+  }
+
+  unstar(userId: string, fileId: string) {
+    return this.prisma.star.deleteMany({ where: { userId, fileId } });
+  }
+
+  async listStarred(userId: string) {
+    const stars = await this.prisma.star.findMany({
+      where: { userId, file: { deletedAt: null } },
+      select: { file: { select: FILE_LIST_SELECT } },
+      orderBy: { createdAt: 'desc' },
+    });
+    return stars.map((s) => ({ ...s.file, starred: true }));
   }
 }
