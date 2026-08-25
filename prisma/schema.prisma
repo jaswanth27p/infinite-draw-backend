@@ -135,13 +135,13 @@ model Message {
 }
 
 model CreditTopup {
-  id                      String   @id @default(cuid())
-  userId                  String
-  user                    User     @relation(fields: [userId], references: [id])
-  amountRupees            Int
-  stripeCheckoutSessionId String   @unique
-  stripePaymentIntentId   String?
-  createdAt               DateTime @default(now())
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id])
+  amountRupees       Int
+  razorpayOrderId    String   @unique
+  razorpayPaymentId  String?
+  createdAt          DateTime @default(now())
 
   @@index([userId, createdAt])
 }
