@@ -10,6 +10,7 @@ describe('NotificationsService', () => {
       count: jest.fn(),
       updateMany: jest.fn(),
     },
+    user: { findUnique: jest.fn() },
   };
   const gatewayMock = {
     server: { to: jest.fn().mockReturnThis(), emit: jest.fn() },
@@ -152,6 +153,40 @@ describe('NotificationsService', () => {
 
       expect(prismaMock.notification.create).not.toHaveBeenCalled();
       expect(gatewayMock.server.to).not.toHaveBeenCalled();
+    });
+
+    it('skips creating a row and does not emit when the recipient disabled that notification type', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ notifyFileShared: false });
+      const service = buildService();
+
+      await service.create({
+        recipientId: 'user_2',
+        actorId: 'user_1',
+        type: 'FILE_SHARED' as never,
+        file: { id: 'f1', name: 'Q3 Roadmap' },
+      });
+
+      expect(prismaMock.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'user_2' },
+        select: { notifyFileShared: true },
+      });
+      expect(prismaMock.notification.create).not.toHaveBeenCalled();
+      expect(gatewayMock.server.to).not.toHaveBeenCalled();
+    });
+
+    it('still creates and emits when the recipient has that notification type enabled (the default)', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ notifyFileShared: true });
+      prismaMock.notification.create.mockResolvedValue(row);
+      const service = buildService();
+
+      await service.create({
+        recipientId: 'user_2',
+        actorId: 'user_1',
+        type: 'FILE_SHARED' as never,
+        file: { id: 'f1', name: 'Q3 Roadmap' },
+      });
+
+      expect(prismaMock.notification.create).toHaveBeenCalled();
     });
   });
 

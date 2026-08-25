@@ -3,6 +3,16 @@ import type { NotificationType, ShareRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsGateway, notificationRoom } from './notifications.gateway';
 
+const PREFERENCE_COLUMN_BY_TYPE: Record<
+  NotificationType,
+  'notifyFileShared' | 'notifyRoleChanged' | 'notifyAccessRemoved' | 'notifyGeneralAccessChanged'
+> = {
+  FILE_SHARED: 'notifyFileShared',
+  ROLE_CHANGED: 'notifyRoleChanged',
+  ACCESS_REMOVED: 'notifyAccessRemoved',
+  GENERAL_ACCESS_CHANGED: 'notifyGeneralAccessChanged',
+};
+
 export interface CreateNotificationInput {
   recipientId: string;
   actorId: string | null;
@@ -47,6 +57,15 @@ export class NotificationsService {
     // general access on their own file) — recipient === actor means there's
     // no one else to tell.
     if (input.actorId === input.recipientId) {
+      return;
+    }
+
+    const preferenceColumn = PREFERENCE_COLUMN_BY_TYPE[input.type];
+    const recipient = await this.prisma.user.findUnique({
+      where: { id: input.recipientId },
+      select: { [preferenceColumn]: true },
+    });
+    if (recipient && (recipient as unknown as Record<string, boolean>)[preferenceColumn] === false) {
       return;
     }
 
