@@ -59,7 +59,7 @@ export class FilesService {
     });
   }
 
-  update(id: string, dto: UpdateFileDto) {
+  async update(id: string, dto: UpdateFileDto) {
     // Defensive on its own terms: explicitly destructure only the fields
     // UpdateFileDto declares instead of casting the whole dto to
     // Prisma.FileUpdateInput. This route sits behind an EDITOR floor, and a
@@ -78,10 +78,22 @@ export class FilesService {
     if (thumbnailUrl !== undefined) {
       data.thumbnailUrl = thumbnailUrl;
     }
-    return this.prisma.file.update({
+    const file = await this.prisma.file.update({
       where: { id },
       data,
     });
+    if (thumbnailUrl !== undefined) {
+      await this.notifyThumbnailUpdated(id, thumbnailUrl);
+    }
+    return file;
+  }
+
+  async notifyThumbnailUpdated(fileId: string, thumbnailUrl: string): Promise<void> {
+    const file = await this.prisma.file.findUnique({ where: { id: fileId }, select: { ownerId: true } });
+    if (!file) return;
+    const shares = await this.prisma.share.findMany({ where: { fileId }, select: { userId: true } });
+    const userIds = [file.ownerId, ...shares.map((s) => s.userId)];
+    this.notificationsService.notifyThumbnailUpdated(userIds, fileId, thumbnailUrl);
   }
 
   // Ownership is enforced by FileAccessGuard + @RequireRole('OWNER') at the

@@ -25,6 +25,30 @@ describe('NotificationsService', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
+  describe('notifyThumbnailUpdated', () => {
+    it('emits to every recipient room, tolerating a per-recipient emit failure', () => {
+      const service = buildService();
+      gatewayMock.server.emit
+        .mockImplementationOnce(() => {
+          throw new Error('socket gone');
+        })
+        .mockImplementationOnce(() => undefined);
+
+      service.notifyThumbnailUpdated(['user_1', 'user_2'], 'f1', 'thumb.png');
+
+      expect(gatewayMock.server.to).toHaveBeenCalledWith(notificationRoom('user_1'));
+      expect(gatewayMock.server.to).toHaveBeenCalledWith(notificationRoom('user_2'));
+      expect(gatewayMock.server.emit).toHaveBeenNthCalledWith(1, 'thumbnail-updated', {
+        fileId: 'f1',
+        thumbnailUrl: 'thumb.png',
+      });
+      expect(gatewayMock.server.emit).toHaveBeenNthCalledWith(2, 'thumbnail-updated', {
+        fileId: 'f1',
+        thumbnailUrl: 'thumb.png',
+      });
+    });
+  });
+
   describe('create', () => {
     const row = {
       id: 'n1',

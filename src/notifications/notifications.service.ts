@@ -100,6 +100,17 @@ export class NotificationsService {
     }
   }
 
+  notifyThumbnailUpdated(userIds: string[], fileId: string, thumbnailUrl: string): void {
+    const payload = { fileId, thumbnailUrl };
+    for (const userId of userIds) {
+      try {
+        this.gateway.server.to(notificationRoom(userId)).emit('thumbnail-updated', payload);
+      } catch (err) {
+        this.logger.warn(`Failed to emit thumbnail update: ${(err as Error).message}`);
+      }
+    }
+  }
+
   async list(userId: string, cursor?: string, limit = 20): Promise<NotificationPayload[]> {
     const rows = (await this.prisma.notification.findMany({
       where: { userId },

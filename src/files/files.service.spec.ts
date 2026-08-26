@@ -10,6 +10,7 @@ describe('FilesService', () => {
       findMany: jest.fn(),
       create: jest.fn(),
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
       deleteMany: jest.fn(),
@@ -24,7 +25,7 @@ describe('FilesService', () => {
       findMany: jest.fn(),
     },
   };
-  const notificationsServiceMock = { create: jest.fn() };
+  const notificationsServiceMock = { create: jest.fn(), notifyThumbnailUpdated: jest.fn() };
 
   async function buildService() {
     const module = await Test.createTestingModule({
@@ -105,6 +106,45 @@ describe('FilesService', () => {
       where: { id: 'f5' },
       data: { name: 'Renamed' },
     });
+  });
+
+  it('update broadcasts a thumbnail update to the owner and every shared user when thumbnailUrl changes', async () => {
+    const service = await buildService();
+    prismaMock.file.update.mockResolvedValue({ id: 'f5', thumbnailUrl: 'new.png' });
+    prismaMock.file.findUnique.mockResolvedValue({ ownerId: 'owner_1' });
+    prismaMock.share.findMany.mockResolvedValue([{ userId: 'user_2' }, { userId: 'user_3' }]);
+
+    await service.update('f5', { thumbnailUrl: 'new.png' });
+
+    expect(prismaMock.share.findMany).toHaveBeenCalledWith({
+      where: { fileId: 'f5' },
+      select: { userId: true },
+    });
+    expect(notificationsServiceMock.notifyThumbnailUpdated).toHaveBeenCalledWith(
+      ['owner_1', 'user_2', 'user_3'],
+      'f5',
+      'new.png',
+    );
+  });
+
+  it('update does not broadcast when thumbnailUrl is not part of the patch', async () => {
+    const service = await buildService();
+    prismaMock.file.update.mockResolvedValue({ id: 'f5', name: 'Renamed' });
+
+    await service.update('f5', { name: 'Renamed' });
+
+    expect(notificationsServiceMock.notifyThumbnailUpdated).not.toHaveBeenCalled();
+    expect(prismaMock.file.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('notifyThumbnailUpdated does nothing if the file no longer exists', async () => {
+    const service = await buildService();
+    prismaMock.file.findUnique.mockResolvedValue(null);
+
+    await service.notifyThumbnailUpdated('gone', 'x.png');
+
+    expect(prismaMock.share.findMany).not.toHaveBeenCalled();
+    expect(notificationsServiceMock.notifyThumbnailUpdated).not.toHaveBeenCalled();
   });
 
   it('softDelete sets deletedAt without re-checking ownership (the caller is guard-gated via @RequireRole(OWNER))', async () => {
