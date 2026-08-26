@@ -65,6 +65,7 @@ model File {
   messages          Message[]
 
   @@index([ownerId, deletedAt])
+  @@index([ownerId, deletedAt, updatedAt])
 }
 
 model FileVersion {
@@ -89,6 +90,7 @@ model Star {
 
   @@unique([userId, fileId])
   @@index([userId])
+  @@index([userId, createdAt])
 }
 
 model Share {
