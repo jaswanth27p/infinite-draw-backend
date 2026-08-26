@@ -147,6 +147,14 @@ describe('FilesService', () => {
     expect(notificationsServiceMock.notifyThumbnailUpdated).not.toHaveBeenCalled();
   });
 
+  it('notifyThumbnailUpdated swallows a failure in the audience lookup instead of throwing', async () => {
+    const service = await buildService();
+    prismaMock.file.findUnique.mockRejectedValue(new Error('connection reset'));
+
+    await expect(service.notifyThumbnailUpdated('f1', 'x.png')).resolves.toBeUndefined();
+    expect(notificationsServiceMock.notifyThumbnailUpdated).not.toHaveBeenCalled();
+  });
+
   it('softDelete sets deletedAt without re-checking ownership (the caller is guard-gated via @RequireRole(OWNER))', async () => {
     const service = await buildService();
     prismaMock.file.update.mockResolvedValue({

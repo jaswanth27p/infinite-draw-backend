@@ -103,4 +103,34 @@ describe('FileVersionsService', () => {
 
     await expect(service.restore({ id: 'f1' } as never, 'missing')).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  it('restore broadcasts a thumbnail update when the restored version has one', async () => {
+    const service = await buildService();
+    const file = { id: 'f1' };
+    prismaMock.fileVersion.findFirst.mockResolvedValue({
+      id: 'v1',
+      data: { elements: ['restored'] },
+      thumbnailUrl: 'v1-thumb.png',
+    });
+    prismaMock.file.update.mockResolvedValue({ id: 'f1', thumbnailUrl: 'v1-thumb.png' });
+
+    await service.restore(file as never, 'v1');
+
+    expect(filesServiceMock.notifyThumbnailUpdated).toHaveBeenCalledWith('f1', 'v1-thumb.png');
+  });
+
+  it('restore does not broadcast when the restored version had no thumbnail', async () => {
+    const service = await buildService();
+    const file = { id: 'f1' };
+    prismaMock.fileVersion.findFirst.mockResolvedValue({
+      id: 'v1',
+      data: { elements: ['restored'] },
+      thumbnailUrl: null,
+    });
+    prismaMock.file.update.mockResolvedValue({ id: 'f1', thumbnailUrl: null });
+
+    await service.restore(file as never, 'v1');
+
+    expect(filesServiceMock.notifyThumbnailUpdated).not.toHaveBeenCalled();
+  });
 });

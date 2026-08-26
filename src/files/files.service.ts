@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { GeneralAccess, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -15,6 +15,8 @@ const FILE_LIST_SELECT = {
 
 @Injectable()
 export class FilesService {
+  private readonly logger = new Logger(FilesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
@@ -89,11 +91,15 @@ export class FilesService {
   }
 
   async notifyThumbnailUpdated(fileId: string, thumbnailUrl: string): Promise<void> {
-    const file = await this.prisma.file.findUnique({ where: { id: fileId }, select: { ownerId: true } });
-    if (!file) return;
-    const shares = await this.prisma.share.findMany({ where: { fileId }, select: { userId: true } });
-    const userIds = [file.ownerId, ...shares.map((s) => s.userId)];
-    this.notificationsService.notifyThumbnailUpdated(userIds, fileId, thumbnailUrl);
+    try {
+      const file = await this.prisma.file.findUnique({ where: { id: fileId }, select: { ownerId: true } });
+      if (!file) return;
+      const shares = await this.prisma.share.findMany({ where: { fileId }, select: { userId: true } });
+      const userIds = [file.ownerId, ...shares.map((s) => s.userId)];
+      this.notificationsService.notifyThumbnailUpdated(userIds, fileId, thumbnailUrl);
+    } catch (err) {
+      this.logger.warn(`Failed to broadcast thumbnail update for ${fileId}: ${(err as Error).message}`);
+    }
   }
 
   // Ownership is enforced by FileAccessGuard + @RequireRole('OWNER') at the

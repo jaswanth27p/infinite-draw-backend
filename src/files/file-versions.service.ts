@@ -46,9 +46,13 @@ export class FileVersionsService {
     if (!version) {
       throw new NotFoundException('Version not found');
     }
-    return this.prisma.file.update({
+    const updated = await this.prisma.file.update({
       where: { id: file.id },
       data: { currentData: version.data as object, thumbnailUrl: version.thumbnailUrl },
     });
+    if (updated.thumbnailUrl) {
+      await this.filesService.notifyThumbnailUpdated(file.id, updated.thumbnailUrl);
+    }
+    return updated;
   }
 }
