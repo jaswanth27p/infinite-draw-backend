@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { FileVersionsService } from './file-versions.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { FilesService } from './files.service';
 
 describe('FileVersionsService', () => {
   const prismaMock = {
@@ -9,9 +10,15 @@ describe('FileVersionsService', () => {
     file: { update: jest.fn() },
   };
 
+  const filesServiceMock = { notifyThumbnailUpdated: jest.fn() };
+
   async function buildService() {
     const module = await Test.createTestingModule({
-      providers: [FileVersionsService, { provide: PrismaService, useValue: prismaMock }],
+      providers: [
+        FileVersionsService,
+        { provide: PrismaService, useValue: prismaMock },
+        { provide: FilesService, useValue: filesServiceMock },
+      ],
     }).compile();
     return module.get(FileVersionsService);
   }
@@ -45,6 +52,17 @@ describe('FileVersionsService', () => {
       where: { id: 'f1' },
       data: { thumbnailUrl: 'new-thumb.png' },
     });
+    expect(filesServiceMock.notifyThumbnailUpdated).toHaveBeenCalledWith('f1', 'new-thumb.png');
+  });
+
+  it('save does not broadcast when no caller-supplied thumbnailUrl is given', async () => {
+    const service = await buildService();
+    const file = { id: 'f1', currentData: { elements: [] }, thumbnailUrl: 'old-thumb.png' };
+    prismaMock.fileVersion.create.mockResolvedValue({ id: 'v1' });
+
+    await service.save(file as never, 'Before redesign');
+
+    expect(filesServiceMock.notifyThumbnailUpdated).not.toHaveBeenCalled();
   });
 
   it('list returns versions for the given fileId without an ownership check', async () => {

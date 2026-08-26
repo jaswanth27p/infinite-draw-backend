@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { File } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { FilesService } from './files.service';
 
 @Injectable()
 export class FileVersionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly filesService: FilesService,
+  ) {}
 
   async save(file: File, name: string, thumbnailUrl?: string) {
     const version = await this.prisma.fileVersion.create({
@@ -21,6 +25,7 @@ export class FileVersionsService {
         where: { id: file.id },
         data: { thumbnailUrl },
       });
+      await this.filesService.notifyThumbnailUpdated(file.id, thumbnailUrl);
     }
 
     return version;
