@@ -234,8 +234,8 @@ export class FilesService {
       select: { ...FILE_LIST_SELECT, deletedAt: true },
     });
     const hasMore = rows.length > take;
-    const items = hasMore ? rows.slice(0, take) : rows;
-    return { items, nextCursor: hasMore ? items[items.length - 1].id : null };
+    const page = hasMore ? rows.slice(0, take) : rows;
+    return { items: page, nextCursor: hasMore ? page[page.length - 1].id : null };
   }
 
   // @AllowDeleted() on the controller route means getAccess() resolves this

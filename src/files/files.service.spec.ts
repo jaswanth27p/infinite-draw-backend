@@ -46,10 +46,11 @@ describe('FilesService', () => {
 
     const result = await service.list('owner_1');
 
-    expect(result).toEqual([{ id: 'f1', starred: false }]);
+    expect(result).toEqual({ items: [{ id: 'f1', starred: false }], nextCursor: null });
     expect(prismaMock.file.findMany).toHaveBeenCalledWith({
       where: { ownerId: 'owner_1', deletedAt: null },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: 31,
       select: expect.objectContaining({
         id: true,
         name: true,
@@ -276,6 +277,7 @@ describe('FilesService', () => {
     const service = await buildService();
     prismaMock.share.findMany.mockResolvedValue([
       {
+        id: 's1',
         role: 'EDITOR',
         file: {
           id: 'f9',
@@ -290,20 +292,24 @@ describe('FilesService', () => {
 
     const result = await service.listShared('user_2');
 
-    expect(result).toEqual([
-      {
-        id: 'f9',
-        name: 'Shared file',
-        thumbnailUrl: null,
-        updatedAt: new Date('2026-01-01'),
-        role: 'EDITOR',
-        owner: { name: 'Alice', email: 'alice@x.com' },
-        starred: false,
-      },
-    ]);
+    expect(result).toEqual({
+      items: [
+        {
+          id: 'f9',
+          name: 'Shared file',
+          thumbnailUrl: null,
+          updatedAt: new Date('2026-01-01'),
+          role: 'EDITOR',
+          owner: { name: 'Alice', email: 'alice@x.com' },
+          starred: false,
+        },
+      ],
+      nextCursor: null,
+    });
     expect(prismaMock.share.findMany).toHaveBeenCalledWith({
       where: { userId: 'user_2', file: { deletedAt: null } },
       select: {
+        id: true,
         role: true,
         file: {
           select: {
@@ -315,7 +321,8 @@ describe('FilesService', () => {
           },
         },
       },
-      orderBy: { file: { updatedAt: 'desc' } },
+      orderBy: [{ file: { updatedAt: 'desc' } }, { id: 'desc' }],
+      take: 31,
     });
   });
 
@@ -347,14 +354,17 @@ describe('FilesService', () => {
     it('listStarred returns only the given user\'s starred, non-deleted files, most recently starred first', async () => {
       const service = await buildService();
       prismaMock.star.findMany.mockResolvedValue([
-        { file: { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01') } },
+        { id: 'st1', file: { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01') } },
       ]);
 
       const result = await service.listStarred('user_1');
 
-      expect(result).toEqual([
-        { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), starred: true },
-      ]);
+      expect(result).toEqual({
+        items: [
+          { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), starred: true },
+        ],
+        nextCursor: null,
+      });
       expect(prismaMock.star.findMany).toHaveBeenCalledWith({
         where: {
           userId: 'user_1',
@@ -368,11 +378,13 @@ describe('FilesService', () => {
           },
         },
         select: {
+          id: true,
           file: {
             select: { id: true, name: true, thumbnailUrl: true, updatedAt: true },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 31,
       });
     });
   });
@@ -387,10 +399,13 @@ describe('FilesService', () => {
 
     const result = await service.list('owner_1');
 
-    expect(result).toEqual([
-      { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), starred: true },
-      { id: 'f2', name: 'B', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), starred: false },
-    ]);
+    expect(result).toEqual({
+      items: [
+        { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), starred: true },
+        { id: 'f2', name: 'B', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), starred: false },
+      ],
+      nextCursor: null,
+    });
     expect(prismaMock.star.findMany).toHaveBeenCalledWith({
       where: { userId: 'owner_1', fileId: { in: ['f1', 'f2'] } },
       select: { fileId: true },
@@ -401,6 +416,7 @@ describe('FilesService', () => {
     const service = await buildService();
     prismaMock.share.findMany.mockResolvedValue([
       {
+        id: 's1',
         role: 'EDITOR',
         file: {
           id: 'f9',
@@ -415,17 +431,20 @@ describe('FilesService', () => {
 
     const result = await service.listShared('user_2');
 
-    expect(result).toEqual([
-      {
-        id: 'f9',
-        name: 'Shared file',
-        thumbnailUrl: null,
-        updatedAt: new Date('2026-01-01'),
-        role: 'EDITOR',
-        owner: { name: 'Alice', email: 'alice@x.com' },
-        starred: true,
-      },
-    ]);
+    expect(result).toEqual({
+      items: [
+        {
+          id: 'f9',
+          name: 'Shared file',
+          thumbnailUrl: null,
+          updatedAt: new Date('2026-01-01'),
+          role: 'EDITOR',
+          owner: { name: 'Alice', email: 'alice@x.com' },
+          starred: true,
+        },
+      ],
+      nextCursor: null,
+    });
   });
 
   describe('listTrash / permanentDelete', () => {
@@ -437,12 +456,16 @@ describe('FilesService', () => {
 
       const result = await service.listTrash('owner_1');
 
-      expect(result).toEqual([
-        { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), deletedAt: new Date('2026-01-02') },
-      ]);
+      expect(result).toEqual({
+        items: [
+          { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), deletedAt: new Date('2026-01-02') },
+        ],
+        nextCursor: null,
+      });
       expect(prismaMock.file.findMany).toHaveBeenCalledWith({
         where: { ownerId: 'owner_1', deletedAt: { not: null } },
-        orderBy: { deletedAt: 'desc' },
+        orderBy: [{ deletedAt: 'desc' }, { id: 'desc' }],
+        take: 31,
         select: expect.objectContaining({
           id: true,
           name: true,
@@ -470,6 +493,182 @@ describe('FilesService', () => {
       prismaMock.file.deleteMany.mockResolvedValue({ count: 0 });
 
       await expect(service.permanentDelete('f1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('pagination', () => {
+    describe('list', () => {
+      it('slices off the extra row fetched via take+1 and sets nextCursor to the last item on the page', async () => {
+        const service = await buildService();
+        prismaMock.file.findMany.mockResolvedValue([
+          { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-02') },
+          { id: 'f2', name: 'B', thumbnailUrl: null, updatedAt: new Date('2026-01-01') },
+        ]);
+        prismaMock.star.findMany.mockResolvedValue([]);
+
+        const result = await service.list('owner_1', undefined, 1);
+
+        expect(result.items).toEqual([
+          { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-02'), starred: false },
+        ]);
+        expect(result.nextCursor).toBe('f1');
+      });
+
+      it('returns nextCursor null when there is no extra row beyond the requested take', async () => {
+        const service = await buildService();
+        prismaMock.file.findMany.mockResolvedValue([
+          { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-02') },
+        ]);
+        prismaMock.star.findMany.mockResolvedValue([]);
+
+        const result = await service.list('owner_1', undefined, 1);
+
+        expect(result.nextCursor).toBeNull();
+      });
+
+      it('passes the caller-supplied cursor through to findMany as cursor/skip', async () => {
+        const service = await buildService();
+        prismaMock.file.findMany.mockResolvedValue([]);
+        prismaMock.star.findMany.mockResolvedValue([]);
+
+        await service.list('owner_1', 'f1', 1);
+
+        expect(prismaMock.file.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ cursor: { id: 'f1' }, skip: 1 }),
+        );
+      });
+    });
+
+    describe('listShared', () => {
+      const shareRow = (id: string, fileId: string, updatedAt: Date) => ({
+        id,
+        role: 'EDITOR',
+        file: {
+          id: fileId,
+          name: 'Shared file',
+          thumbnailUrl: null,
+          updatedAt,
+          owner: { name: 'Alice', email: 'alice@x.com' },
+        },
+      });
+
+      it('slices off the extra row fetched via take+1 and sets nextCursor to the last Share row id on the page', async () => {
+        const service = await buildService();
+        prismaMock.share.findMany.mockResolvedValue([
+          shareRow('s1', 'f1', new Date('2026-01-02')),
+          shareRow('s2', 'f2', new Date('2026-01-01')),
+        ]);
+        prismaMock.star.findMany.mockResolvedValue([]);
+
+        const result = await service.listShared('user_2', undefined, 1);
+
+        expect(result.items).toHaveLength(1);
+        expect(result.items[0].id).toBe('f1');
+        expect(result.nextCursor).toBe('s1');
+      });
+
+      it('returns nextCursor null when there is no extra row beyond the requested take', async () => {
+        const service = await buildService();
+        prismaMock.share.findMany.mockResolvedValue([shareRow('s1', 'f1', new Date('2026-01-02'))]);
+        prismaMock.star.findMany.mockResolvedValue([]);
+
+        const result = await service.listShared('user_2', undefined, 1);
+
+        expect(result.nextCursor).toBeNull();
+      });
+
+      it('passes the caller-supplied cursor through to findMany as cursor/skip', async () => {
+        const service = await buildService();
+        prismaMock.share.findMany.mockResolvedValue([]);
+        prismaMock.star.findMany.mockResolvedValue([]);
+
+        await service.listShared('user_2', 's1', 1);
+
+        expect(prismaMock.share.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ cursor: { id: 's1' }, skip: 1 }),
+        );
+      });
+    });
+
+    describe('listStarred', () => {
+      const starRow = (id: string, fileId: string, updatedAt: Date) => ({
+        id,
+        file: { id: fileId, name: 'A', thumbnailUrl: null, updatedAt },
+      });
+
+      it('slices off the extra row fetched via take+1 and sets nextCursor to the last Star row id on the page', async () => {
+        const service = await buildService();
+        prismaMock.star.findMany.mockResolvedValue([
+          starRow('st1', 'f1', new Date('2026-01-02')),
+          starRow('st2', 'f2', new Date('2026-01-01')),
+        ]);
+
+        const result = await service.listStarred('user_1', undefined, 1);
+
+        expect(result.items).toEqual([
+          { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-02'), starred: true },
+        ]);
+        expect(result.nextCursor).toBe('st1');
+      });
+
+      it('returns nextCursor null when there is no extra row beyond the requested take', async () => {
+        const service = await buildService();
+        prismaMock.star.findMany.mockResolvedValue([starRow('st1', 'f1', new Date('2026-01-02'))]);
+
+        const result = await service.listStarred('user_1', undefined, 1);
+
+        expect(result.nextCursor).toBeNull();
+      });
+
+      it('passes the caller-supplied cursor through to findMany as cursor/skip', async () => {
+        const service = await buildService();
+        prismaMock.star.findMany.mockResolvedValue([]);
+
+        await service.listStarred('user_1', 'st1', 1);
+
+        expect(prismaMock.star.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ cursor: { id: 'st1' }, skip: 1 }),
+        );
+      });
+    });
+
+    describe('listTrash', () => {
+      it('slices off the extra row fetched via take+1 and sets nextCursor to the last item on the page', async () => {
+        const service = await buildService();
+        prismaMock.file.findMany.mockResolvedValue([
+          { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-02'), deletedAt: new Date('2026-01-03') },
+          { id: 'f2', name: 'B', thumbnailUrl: null, updatedAt: new Date('2026-01-01'), deletedAt: new Date('2026-01-02') },
+        ]);
+
+        const result = await service.listTrash('owner_1', undefined, 1);
+
+        expect(result.items).toEqual([
+          { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-02'), deletedAt: new Date('2026-01-03') },
+        ]);
+        expect(result.nextCursor).toBe('f1');
+      });
+
+      it('returns nextCursor null when there is no extra row beyond the requested take', async () => {
+        const service = await buildService();
+        prismaMock.file.findMany.mockResolvedValue([
+          { id: 'f1', name: 'A', thumbnailUrl: null, updatedAt: new Date('2026-01-02'), deletedAt: new Date('2026-01-03') },
+        ]);
+
+        const result = await service.listTrash('owner_1', undefined, 1);
+
+        expect(result.nextCursor).toBeNull();
+      });
+
+      it('passes the caller-supplied cursor through to findMany as cursor/skip', async () => {
+        const service = await buildService();
+        prismaMock.file.findMany.mockResolvedValue([]);
+
+        await service.listTrash('owner_1', 'f1', 1);
+
+        expect(prismaMock.file.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({ cursor: { id: 'f1' }, skip: 1 }),
+        );
+      });
     });
   });
 });
