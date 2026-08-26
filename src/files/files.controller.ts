@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
@@ -19,18 +20,26 @@ import { FilesService } from './files.service';
 import { UpdateFileDto } from './dto/update-file.dto';
 import { UpdateGeneralAccessDto } from './dto/update-general-access.dto';
 
+function clampLimit(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.min(parsed, 50);
+}
+
 @Controller('files')
 @UseGuards(ClerkAuthGuard, LoadLocalUserGuard)
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
   @Get()
-  async list(@CurrentLocalUserId() ownerId: string) {
-    const [owned, sharedWithMe] = await Promise.all([
-      this.filesService.list(ownerId),
-      this.filesService.listShared(ownerId),
-    ]);
-    return { owned, sharedWithMe };
+  async list(
+    @CurrentLocalUserId() ownerId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.filesService.list(ownerId, cursor, clampLimit(limit, 30));
   }
 
   @Post()
@@ -38,14 +47,31 @@ export class FilesController {
     return this.filesService.create(ownerId);
   }
 
+  @Get('shared')
+  async shared(
+    @CurrentLocalUserId() userId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.filesService.listShared(userId, cursor, clampLimit(limit, 30));
+  }
+
   @Get('starred')
-  starred(@CurrentLocalUserId() userId: string) {
-    return this.filesService.listStarred(userId);
+  starred(
+    @CurrentLocalUserId() userId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.filesService.listStarred(userId, cursor, clampLimit(limit, 30));
   }
 
   @Get('trash')
-  trash(@CurrentLocalUserId() userId: string) {
-    return this.filesService.listTrash(userId);
+  trash(
+    @CurrentLocalUserId() userId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.filesService.listTrash(userId, cursor, clampLimit(limit, 30));
   }
 
   @Get(':id')

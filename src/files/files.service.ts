@@ -35,13 +35,18 @@ export class FilesService {
     return files.map((f) => ({ ...f, starred: starredIds.has(f.id) }));
   }
 
-  async list(ownerId: string) {
-    const files = await this.prisma.file.findMany({
+  async list(ownerId: string, cursor?: string, take = 30) {
+    const rows = await this.prisma.file.findMany({
       where: { ownerId, deletedAt: null },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: FILE_LIST_SELECT,
     });
-    return this.withStarred(ownerId, files);
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+    const items = await this.withStarred(ownerId, page);
+    return { items, nextCursor: hasMore ? page[page.length - 1].id : null };
   }
 
   create(ownerId: string) {
@@ -122,11 +127,12 @@ export class FilesService {
     return null;
   }
 
-  listShared(userId: string) {
+  listShared(userId: string, cursor?: string, take = 30) {
     return this.prisma.share
       .findMany({
         where: { userId, file: { deletedAt: null } },
         select: {
+          id: true,
           role: true,
           file: {
             select: {
@@ -138,21 +144,24 @@ export class FilesService {
             },
           },
         },
-        orderBy: { file: { updatedAt: 'desc' } },
+        orderBy: [{ file: { updatedAt: 'desc' } }, { id: 'desc' }],
+        take: take + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       })
-      .then((shares) =>
-        this.withStarred(
-          userId,
-          shares.map((s) => ({
-            id: s.file.id,
-            name: s.file.name,
-            thumbnailUrl: s.file.thumbnailUrl,
-            updatedAt: s.file.updatedAt,
-            role: s.role,
-            owner: s.file.owner,
-          })),
-        ),
-      );
+      .then(async (rows) => {
+        const hasMore = rows.length > take;
+        const page = hasMore ? rows.slice(0, take) : rows;
+        const mapped = page.map((s) => ({
+          id: s.file.id,
+          name: s.file.name,
+          thumbnailUrl: s.file.thumbnailUrl,
+          updatedAt: s.file.updatedAt,
+          role: s.role,
+          owner: s.file.owner,
+        }));
+        const items = await this.withStarred(userId, mapped);
+        return { items, nextCursor: hasMore ? page[page.length - 1].id : null };
+      });
   }
 
   async updateGeneralAccess(id: string, dto: UpdateGeneralAccessDto) {
@@ -192,8 +201,8 @@ export class FilesService {
   // grant that justified it (e.g. after SharesService#remove, or after an
   // owner flips generalAccess back to RESTRICTED), and the ex-collaborator
   // keeps seeing the file's name/thumbnail on this list indefinitely.
-  async listStarred(userId: string) {
-    const stars = await this.prisma.star.findMany({
+  async listStarred(userId: string, cursor?: string, take = 30) {
+    const rows = await this.prisma.star.findMany({
       where: {
         userId,
         file: {
@@ -205,18 +214,28 @@ export class FilesService {
           ],
         },
       },
-      select: { file: { select: FILE_LIST_SELECT } },
-      orderBy: { createdAt: 'desc' },
+      select: { id: true, file: { select: FILE_LIST_SELECT } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
-    return stars.map((s) => ({ ...s.file, starred: true }));
+    const hasMore = rows.length > take;
+    const page = hasMore ? rows.slice(0, take) : rows;
+    const items = page.map((s) => ({ ...s.file, starred: true }));
+    return { items, nextCursor: hasMore ? page[page.length - 1].id : null };
   }
 
-  listTrash(ownerId: string) {
-    return this.prisma.file.findMany({
+  async listTrash(ownerId: string, cursor?: string, take = 30) {
+    const rows = await this.prisma.file.findMany({
       where: { ownerId, deletedAt: { not: null } },
-      orderBy: { deletedAt: 'desc' },
+      orderBy: [{ deletedAt: 'desc' }, { id: 'desc' }],
+      take: take + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       select: { ...FILE_LIST_SELECT, deletedAt: true },
     });
+    const hasMore = rows.length > take;
+    const items = hasMore ? rows.slice(0, take) : rows;
+    return { items, nextCursor: hasMore ? items[items.length - 1].id : null };
   }
 
   // @AllowDeleted() on the controller route means getAccess() resolves this
