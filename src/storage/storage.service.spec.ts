@@ -4,7 +4,9 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
 
 import {
   CreateBucketCommand,
+  DeleteObjectCommand,
   HeadBucketCommand,
+  ListObjectsV2Command,
   PutBucketPolicyCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -121,6 +123,97 @@ describe('StorageService', () => {
         Action: expect.arrayContaining(['s3:GetObject']),
         Resource: ['arn:aws:s3:::infinite-draw-assets/thumbnails/*'],
       });
+    });
+  });
+
+  describe('deleteObject', () => {
+    it('sends a DeleteObjectCommand for the given key', async () => {
+      const sendSpy = jest
+        .spyOn(S3Client.prototype, 'send')
+        .mockImplementation(() => Promise.resolve({}));
+      const service = new StorageService();
+
+      await service.deleteObject('thumbnails/file-1/123.png');
+
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      const command = sendSpy.mock.calls[0][0] as DeleteObjectCommand;
+      expect(command).toBeInstanceOf(DeleteObjectCommand);
+      expect(command.input).toEqual({
+        Bucket: 'infinite-draw-assets',
+        Key: 'thumbnails/file-1/123.png',
+      });
+    });
+  });
+
+  describe('listThumbnailKeys', () => {
+    it('lists every object under thumbnails/, following pagination', async () => {
+      const sendSpy = jest
+        .spyOn(S3Client.prototype, 'send')
+        .mockImplementation((command: unknown) => {
+          if (!(command instanceof ListObjectsV2Command)) {
+            return Promise.reject(new Error(`unexpected command: ${String(command)}`));
+          }
+          if (!command.input.ContinuationToken) {
+            return Promise.resolve({
+              Contents: [{ Key: 'thumbnails/a.png', LastModified: new Date('2026-01-01') }],
+              IsTruncated: true,
+              NextContinuationToken: 'page-2',
+            });
+          }
+          return Promise.resolve({
+            Contents: [{ Key: 'thumbnails/b.png', LastModified: new Date('2026-01-02') }],
+            IsTruncated: false,
+          });
+        });
+
+      const service = new StorageService();
+      const keys = await service.listThumbnailKeys();
+
+      expect(keys).toEqual([
+        { key: 'thumbnails/a.png', lastModified: new Date('2026-01-01') },
+        { key: 'thumbnails/b.png', lastModified: new Date('2026-01-02') },
+      ]);
+      expect(sendSpy).toHaveBeenCalledTimes(2);
+      expect(sendSpy.mock.calls[0][0].input).toMatchObject({
+        Bucket: 'infinite-draw-assets',
+        Prefix: 'thumbnails/',
+      });
+      expect(sendSpy.mock.calls[1][0].input).toMatchObject({
+        ContinuationToken: 'page-2',
+      });
+    });
+
+    it('skips entries with no Key or LastModified', async () => {
+      jest.spyOn(S3Client.prototype, 'send').mockImplementation(() =>
+        Promise.resolve({
+          Contents: [
+            { Key: undefined, LastModified: new Date() },
+            { Key: 'thumbnails/c.png', LastModified: undefined },
+          ],
+          IsTruncated: false,
+        }),
+      );
+
+      const service = new StorageService();
+      const keys = await service.listThumbnailKeys();
+
+      expect(keys).toEqual([]);
+    });
+  });
+
+  describe('keyFromPublicUrl', () => {
+    it('extracts the key from a URL this service generated', () => {
+      const service = new StorageService();
+
+      expect(service.keyFromPublicUrl('http://localhost:9000/infinite-draw-assets/thumbnails/f1/1.png')).toBe(
+        'thumbnails/f1/1.png',
+      );
+    });
+
+    it('returns null for a URL that does not match this bucket/endpoint', () => {
+      const service = new StorageService();
+
+      expect(service.keyFromPublicUrl('https://example.com/other/thumbnails/f1/1.png')).toBeNull();
     });
   });
 });

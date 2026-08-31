@@ -1,7 +1,9 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import {
   CreateBucketCommand,
+  DeleteObjectCommand,
   HeadBucketCommand,
+  ListObjectsV2Command,
   PutBucketPolicyCommand,
   PutObjectCommand,
   S3Client,
@@ -98,5 +100,40 @@ export class StorageService implements OnModuleInit {
    */
   getPublicUrl(key: string): string {
     return `${process.env.S3_ENDPOINT}/${this.bucket}/${key}`;
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
+
+  /**
+   * Reverses getPublicUrl — returns null for any URL this service didn't
+   * generate (different bucket/endpoint), so callers never mistake a
+   * foreign URL for one of ours.
+   */
+  keyFromPublicUrl(url: string): string | null {
+    const prefix = `${process.env.S3_ENDPOINT}/${this.bucket}/`;
+    return url.startsWith(prefix) ? url.slice(prefix.length) : null;
+  }
+
+  async listThumbnailKeys(): Promise<{ key: string; lastModified: Date }[]> {
+    const results: { key: string; lastModified: Date }[] = [];
+    let continuationToken: string | undefined;
+    do {
+      const page = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: 'thumbnails/',
+          ContinuationToken: continuationToken,
+        }),
+      );
+      for (const obj of page.Contents ?? []) {
+        if (obj.Key && obj.LastModified) {
+          results.push({ key: obj.Key, lastModified: obj.LastModified });
+        }
+      }
+      continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (continuationToken);
+    return results;
   }
 }
