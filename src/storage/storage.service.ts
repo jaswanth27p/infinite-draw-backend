@@ -13,8 +13,25 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 @Injectable()
 export class StorageService implements OnModuleInit {
   private readonly bucket = process.env.S3_BUCKET as string;
+  private readonly publicEndpoint = process.env.S3_PUBLIC_ENDPOINT || process.env.S3_ENDPOINT;
   private readonly client = new S3Client({
     endpoint: process.env.S3_ENDPOINT,
+    region: process.env.S3_REGION ?? 'us-east-1',
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: process.env.S3_ACCESS_KEY as string,
+      secretAccessKey: process.env.S3_SECRET_KEY as string,
+    },
+  });
+
+  // Used only to SIGN presigned upload URLs (a local computation, no network
+  // call) so the signed host is one the browser can actually reach —
+  // S3_ENDPOINT stays internal/localhost for this service's own admin calls
+  // (bucket setup, listing, delete) below. Requires S3_PUBLIC_ENDPOINT to be
+  // the same MinIO instance reached through a different host (e.g. a
+  // devtunnel forward for the same port), not a different server.
+  private readonly presignClient = new S3Client({
+    endpoint: this.publicEndpoint,
     region: process.env.S3_REGION ?? 'us-east-1',
     forcePathStyle: true,
     credentials: {
@@ -90,7 +107,7 @@ export class StorageService implements OnModuleInit {
       Key: key,
       ContentType: contentType,
     });
-    return getSignedUrl(this.client, command, { expiresIn: 900 });
+    return getSignedUrl(this.presignClient, command, { expiresIn: 900 });
   }
 
   /**
@@ -99,7 +116,7 @@ export class StorageService implements OnModuleInit {
    * of deriving a "public" URL themselves from the presigned URL.
    */
   getPublicUrl(key: string): string {
-    return `${process.env.S3_ENDPOINT}/${this.bucket}/${key}`;
+    return `${this.publicEndpoint}/${this.bucket}/${key}`;
   }
 
   async deleteObject(key: string): Promise<void> {
@@ -112,7 +129,7 @@ export class StorageService implements OnModuleInit {
    * foreign URL for one of ours.
    */
   keyFromPublicUrl(url: string): string | null {
-    const prefix = `${process.env.S3_ENDPOINT}/${this.bucket}/`;
+    const prefix = `${this.publicEndpoint}/${this.bucket}/`;
     return url.startsWith(prefix) ? url.slice(prefix.length) : null;
   }
 
