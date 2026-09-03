@@ -9,4 +9,8 @@ export class CreateVersionDto {
   @IsOptional()
   @IsString()
   thumbnailUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  thumbnailUrlDark?: string;
 }

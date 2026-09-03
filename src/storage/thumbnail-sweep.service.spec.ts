@@ -60,6 +60,38 @@ describe('ThumbnailSweepService', () => {
     expect(storageMock.deleteObject).not.toHaveBeenCalled();
   });
 
+  it('treats a dark-theme-only key as referenced (does not orphan-sweep it)', async () => {
+    storageMock.listThumbnailKeys.mockResolvedValue([
+      { key: 'thumbnails/dark-only.png', lastModified: new Date(0) },
+    ]);
+    prismaMock.file.findMany.mockResolvedValue([
+      { thumbnailUrl: null, thumbnailUrlDark: 'http://minio/bucket/thumbnails/dark-only.png' },
+    ]);
+    prismaMock.fileVersion.findMany.mockResolvedValue([]);
+
+    const deleted = await buildService().sweep(5_000);
+
+    expect(deleted).toBe(0);
+    expect(storageMock.deleteObject).not.toHaveBeenCalled();
+  });
+
+  it('queries both File and FileVersion with an OR filter covering both URL columns', async () => {
+    storageMock.listThumbnailKeys.mockResolvedValue([]);
+    prismaMock.file.findMany.mockResolvedValue([]);
+    prismaMock.fileVersion.findMany.mockResolvedValue([]);
+
+    await buildService().sweep(5_000);
+
+    expect(prismaMock.file.findMany).toHaveBeenCalledWith({
+      where: { OR: [{ thumbnailUrl: { not: null } }, { thumbnailUrlDark: { not: null } }] },
+      select: { thumbnailUrl: true, thumbnailUrlDark: true },
+    });
+    expect(prismaMock.fileVersion.findMany).toHaveBeenCalledWith({
+      where: { OR: [{ thumbnailUrl: { not: null } }, { thumbnailUrlDark: { not: null } }] },
+      select: { thumbnailUrl: true, thumbnailUrlDark: true },
+    });
+  });
+
   it('does nothing when nothing is orphaned', async () => {
     storageMock.listThumbnailKeys.mockResolvedValue([]);
     prismaMock.file.findMany.mockResolvedValue([]);

@@ -43,17 +43,18 @@ export class ThumbnailSweepService {
   private async referencedKeys(): Promise<Set<string>> {
     const [files, versions] = await Promise.all([
       this.prisma.file.findMany({
-        where: { thumbnailUrl: { not: null } },
-        select: { thumbnailUrl: true },
+        where: { OR: [{ thumbnailUrl: { not: null } }, { thumbnailUrlDark: { not: null } }] },
+        select: { thumbnailUrl: true, thumbnailUrlDark: true },
       }),
       this.prisma.fileVersion.findMany({
-        where: { thumbnailUrl: { not: null } },
-        select: { thumbnailUrl: true },
+        where: { OR: [{ thumbnailUrl: { not: null } }, { thumbnailUrlDark: { not: null } }] },
+        select: { thumbnailUrl: true, thumbnailUrlDark: true },
       }),
     ]);
 
+    const urls = [...files, ...versions].flatMap((row) => [row.thumbnailUrl, row.thumbnailUrlDark]);
     const keys = new Set<string>();
-    for (const url of [...files, ...versions].map((row) => row.thumbnailUrl)) {
+    for (const url of urls) {
       const key = url ? this.storage.keyFromPublicUrl(url) : null;
       if (key) keys.add(key);
     }

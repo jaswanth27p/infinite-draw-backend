@@ -40,21 +40,21 @@ describe('FileVersionsService', () => {
     expect(prismaMock.file.update).not.toHaveBeenCalled();
   });
 
-  it("save uses a caller-supplied thumbnailUrl instead of the file's current one, when provided", async () => {
+  it("save uses caller-supplied thumbnail URLs instead of the file's current ones, when provided", async () => {
     const service = await buildService();
-    const file = { id: 'f1', currentData: { elements: [] }, thumbnailUrl: 'old-thumb.png' };
+    const file = { id: 'f1', currentData: { elements: [] }, thumbnailUrl: 'old-thumb.png', thumbnailUrlDark: 'old-thumb-dark.png' };
     prismaMock.fileVersion.create.mockResolvedValue({ id: 'v1' });
 
-    await service.save(file as never, 'Before redesign', 'new-thumb.png');
+    await service.save(file as never, 'Before redesign', 'new-thumb.png', 'new-thumb-dark.png');
 
     expect(prismaMock.fileVersion.create).toHaveBeenCalledWith({
-      data: { fileId: 'f1', name: 'Before redesign', data: { elements: [] }, thumbnailUrl: 'new-thumb.png', origin: 'MANUAL' },
+      data: { fileId: 'f1', name: 'Before redesign', data: { elements: [] }, thumbnailUrl: 'new-thumb.png', thumbnailUrlDark: 'new-thumb-dark.png', origin: 'MANUAL' },
     });
     expect(prismaMock.file.update).toHaveBeenCalledWith({
       where: { id: 'f1' },
-      data: { thumbnailUrl: 'new-thumb.png' },
+      data: { thumbnailUrl: 'new-thumb.png', thumbnailUrlDark: 'new-thumb-dark.png' },
     });
-    expect(filesServiceMock.notifyThumbnailUpdated).toHaveBeenCalledWith('f1', 'new-thumb.png');
+    expect(filesServiceMock.notifyThumbnailUpdated).toHaveBeenCalledWith('f1', 'new-thumb.png', 'new-thumb-dark.png');
   });
 
   it('save does not broadcast when no caller-supplied thumbnailUrl is given', async () => {
@@ -77,17 +77,18 @@ describe('FileVersionsService', () => {
     expect(prismaMock.fileVersion.findMany).toHaveBeenCalledWith({
       where: { fileId: 'f1' },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, thumbnailUrl: true, origin: true, createdAt: true },
+      select: { id: true, name: true, thumbnailUrl: true, thumbnailUrlDark: true, origin: true, createdAt: true },
     });
   });
 
-  it('restore copies the version data/thumbnail into currentData without deleting the version', async () => {
+  it('restore copies the version data/thumbnails into currentData without deleting the version', async () => {
     const service = await buildService();
     const file = { id: 'f1' };
     prismaMock.fileVersion.findFirst.mockResolvedValue({
       id: 'v1',
       data: { elements: ['restored'] },
       thumbnailUrl: 'v1-thumb.png',
+      thumbnailUrlDark: 'v1-thumb-dark.png',
     });
     prismaMock.file.update.mockResolvedValue({ id: 'f1', currentData: { elements: ['restored'] } });
 
@@ -95,7 +96,7 @@ describe('FileVersionsService', () => {
 
     expect(prismaMock.file.update).toHaveBeenCalledWith({
       where: { id: 'f1' },
-      data: { currentData: { elements: ['restored'] }, thumbnailUrl: 'v1-thumb.png' },
+      data: { currentData: { elements: ['restored'] }, thumbnailUrl: 'v1-thumb.png', thumbnailUrlDark: 'v1-thumb-dark.png' },
     });
   });
 
@@ -106,19 +107,20 @@ describe('FileVersionsService', () => {
     await expect(service.restore({ id: 'f1' } as never, 'missing')).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('restore broadcasts a thumbnail update when the restored version has one', async () => {
+  it('restore broadcasts a thumbnail update (both URLs) when the restored version has one', async () => {
     const service = await buildService();
     const file = { id: 'f1' };
     prismaMock.fileVersion.findFirst.mockResolvedValue({
       id: 'v1',
       data: { elements: ['restored'] },
       thumbnailUrl: 'v1-thumb.png',
+      thumbnailUrlDark: 'v1-thumb-dark.png',
     });
-    prismaMock.file.update.mockResolvedValue({ id: 'f1', thumbnailUrl: 'v1-thumb.png' });
+    prismaMock.file.update.mockResolvedValue({ id: 'f1', thumbnailUrl: 'v1-thumb.png', thumbnailUrlDark: 'v1-thumb-dark.png' });
 
     await service.restore(file as never, 'v1');
 
-    expect(filesServiceMock.notifyThumbnailUpdated).toHaveBeenCalledWith('f1', 'v1-thumb.png');
+    expect(filesServiceMock.notifyThumbnailUpdated).toHaveBeenCalledWith('f1', 'v1-thumb.png', 'v1-thumb-dark.png');
   });
 
   it('restore does not broadcast when the restored version had no thumbnail', async () => {

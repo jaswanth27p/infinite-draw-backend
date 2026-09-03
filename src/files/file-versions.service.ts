@@ -14,13 +14,14 @@ export class FileVersionsService {
     private readonly filesService: FilesService,
   ) {}
 
-  async save(file: File, name: string, thumbnailUrl?: string) {
+  async save(file: File, name: string, thumbnailUrl?: string, thumbnailUrlDark?: string) {
     const version = await this.prisma.fileVersion.create({
       data: {
         fileId: file.id,
         name,
         data: file.currentData as object,
         thumbnailUrl: thumbnailUrl ?? file.thumbnailUrl,
+        thumbnailUrlDark: thumbnailUrlDark ?? file.thumbnailUrlDark,
         origin: 'MANUAL',
       },
     });
@@ -28,9 +29,9 @@ export class FileVersionsService {
     if (thumbnailUrl) {
       await this.prisma.file.update({
         where: { id: file.id },
-        data: { thumbnailUrl },
+        data: { thumbnailUrl, thumbnailUrlDark },
       });
-      await this.filesService.notifyThumbnailUpdated(file.id, thumbnailUrl);
+      await this.filesService.notifyThumbnailUpdated(file.id, thumbnailUrl, thumbnailUrlDark);
     }
 
     return version;
@@ -40,7 +41,7 @@ export class FileVersionsService {
     return this.prisma.fileVersion.findMany({
       where: { fileId },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, thumbnailUrl: true, origin: true, createdAt: true },
+      select: { id: true, name: true, thumbnailUrl: true, thumbnailUrlDark: true, origin: true, createdAt: true },
     });
   }
 
@@ -53,10 +54,14 @@ export class FileVersionsService {
     }
     const updated = await this.prisma.file.update({
       where: { id: file.id },
-      data: { currentData: version.data as object, thumbnailUrl: version.thumbnailUrl },
+      data: {
+        currentData: version.data as object,
+        thumbnailUrl: version.thumbnailUrl,
+        thumbnailUrlDark: version.thumbnailUrlDark,
+      },
     });
     if (updated.thumbnailUrl) {
-      await this.filesService.notifyThumbnailUpdated(file.id, updated.thumbnailUrl);
+      await this.filesService.notifyThumbnailUpdated(file.id, updated.thumbnailUrl, updated.thumbnailUrlDark ?? undefined);
     }
     return updated;
   }
@@ -101,6 +106,7 @@ export class FileVersionsService {
           name,
           data: file.currentData as object,
           thumbnailUrl: file.thumbnailUrl,
+          thumbnailUrlDark: file.thumbnailUrlDark,
           origin: 'AUTO',
         },
       });

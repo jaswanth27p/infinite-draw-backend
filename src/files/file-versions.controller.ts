@@ -16,7 +16,7 @@ export class FileVersionsController {
   @UseGuards(FileAccessGuard)
   @RequireRole('EDITOR')
   save(@CurrentFileAccess() access: FileAccess, @Body() dto: CreateVersionDto) {
-    return this.versionsService.save(access.file, dto.name, dto.thumbnailUrl);
+    return this.versionsService.save(access.file, dto.name, dto.thumbnailUrl, dto.thumbnailUrlDark);
   }
 
   @Get()
