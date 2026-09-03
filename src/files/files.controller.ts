@@ -58,8 +58,10 @@ export class FilesController {
     @CurrentLocalUserId() userId: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
+    @Query('q') q?: string,
+    @Query('role') role?: string,
   ) {
-    return this.filesService.listShared(userId, cursor, clampLimit(limit, 30));
+    return this.filesService.listShared(userId, cursor, clampLimit(limit, 30), q, role as never);
   }
 
   @Get('starred')

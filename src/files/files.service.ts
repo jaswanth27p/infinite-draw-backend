@@ -155,10 +155,14 @@ export class FilesService {
     return null;
   }
 
-  listShared(userId: string, cursor?: string, take = 30) {
+  listShared(userId: string, cursor?: string, take = 30, q?: string, role?: Role) {
     return this.prisma.share
       .findMany({
-        where: { userId, file: { deletedAt: null } },
+        where: {
+          userId,
+          ...(role ? { role: role as never } : {}),
+          file: { deletedAt: null, ...(q ? { name: { contains: q, mode: 'insensitive' as const } } : {}) },
+        },
         select: {
           id: true,
           role: true,

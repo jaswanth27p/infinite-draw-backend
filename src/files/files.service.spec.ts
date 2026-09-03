@@ -866,5 +866,47 @@ describe('FilesService', () => {
         expect.objectContaining({ where: { ownerId: 'owner_1', deletedAt: { not: null } } }),
       );
     });
+
+    it('listShared filters by name substring when q is provided', async () => {
+      const service = await buildService();
+      prismaMock.share.findMany.mockResolvedValue([]);
+      prismaMock.star.findMany.mockResolvedValue([]);
+
+      await service.listShared('user_2', undefined, 30, 'roadmap');
+
+      expect(prismaMock.share.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 'user_2', file: { deletedAt: null, name: { contains: 'roadmap', mode: 'insensitive' } } },
+        }),
+      );
+    });
+
+    it('listShared filters by role when provided', async () => {
+      const service = await buildService();
+      prismaMock.share.findMany.mockResolvedValue([]);
+      prismaMock.star.findMany.mockResolvedValue([]);
+
+      await service.listShared('user_2', undefined, 30, undefined, 'EDITOR' as never);
+
+      expect(prismaMock.share.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 'user_2', role: 'EDITOR', file: { deletedAt: null } },
+        }),
+      );
+    });
+
+    it('listShared omits both filters when neither q nor role is provided', async () => {
+      const service = await buildService();
+      prismaMock.share.findMany.mockResolvedValue([]);
+      prismaMock.star.findMany.mockResolvedValue([]);
+
+      await service.listShared('user_2');
+
+      expect(prismaMock.share.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 'user_2', file: { deletedAt: null } },
+        }),
+      );
+    });
   });
 });
