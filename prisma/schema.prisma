@@ -59,7 +59,9 @@ model File {
   owner             User          @relation(fields: [ownerId], references: [id])
   name              String        @default("Untitled")
   currentData       Json
+  /// Light-theme thumbnail render. See thumbnailUrlDark for the dark-theme pair.
   thumbnailUrl      String?
+  thumbnailUrlDark  String?
   generalAccess     GeneralAccess @default(RESTRICTED)
   generalAccessRole ShareRole?
   deletedAt         DateTime?
@@ -75,14 +77,15 @@ model File {
 }
 
 model FileVersion {
-  id           String            @id @default(cuid())
-  fileId       String
-  file         File              @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  name         String
-  data         Json
-  thumbnailUrl String?
-  origin       FileVersionOrigin @default(MANUAL)
-  createdAt    DateTime          @default(now())
+  id               String            @id @default(cuid())
+  fileId           String
+  file             File              @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  name             String
+  data             Json
+  thumbnailUrl     String?
+  thumbnailUrlDark String?
+  origin           FileVersionOrigin @default(MANUAL)
+  createdAt        DateTime          @default(now())
 
   @@index([fileId, createdAt])
 }
