@@ -10,6 +10,7 @@ const FILE_LIST_SELECT = {
   id: true,
   name: true,
   thumbnailUrl: true,
+  thumbnailUrlDark: true,
   updatedAt: true,
 } as const;
 
@@ -69,7 +70,7 @@ export class FilesService {
     // Prisma, relying solely on the global ValidationPipe({ whitelist:
     // true }) in main.ts (a setting that lives in a different file) to keep
     // e.g. generalAccess/ownerId from being smuggled through.
-    const { name, currentData, thumbnailUrl } = dto;
+    const { name, currentData, thumbnailUrl, thumbnailUrlDark } = dto;
     const data: Prisma.FileUpdateInput = {};
     if (name !== undefined) {
       data.name = name;
@@ -80,23 +81,26 @@ export class FilesService {
     if (thumbnailUrl !== undefined) {
       data.thumbnailUrl = thumbnailUrl;
     }
+    if (thumbnailUrlDark !== undefined) {
+      data.thumbnailUrlDark = thumbnailUrlDark;
+    }
     const file = await this.prisma.file.update({
       where: { id },
       data,
     });
     if (thumbnailUrl !== undefined) {
-      await this.notifyThumbnailUpdated(id, thumbnailUrl);
+      await this.notifyThumbnailUpdated(id, thumbnailUrl, thumbnailUrlDark);
     }
     return file;
   }
 
-  async notifyThumbnailUpdated(fileId: string, thumbnailUrl: string): Promise<void> {
+  async notifyThumbnailUpdated(fileId: string, thumbnailUrl: string, thumbnailUrlDark?: string): Promise<void> {
     try {
       const file = await this.prisma.file.findUnique({ where: { id: fileId }, select: { ownerId: true } });
       if (!file) return;
       const shares = await this.prisma.share.findMany({ where: { fileId }, select: { userId: true } });
       const userIds = [file.ownerId, ...shares.map((s) => s.userId)];
-      this.notificationsService.notifyThumbnailUpdated(userIds, fileId, thumbnailUrl);
+      this.notificationsService.notifyThumbnailUpdated(userIds, fileId, thumbnailUrl, thumbnailUrlDark);
     } catch (err) {
       this.logger.warn(`Failed to broadcast thumbnail update for ${fileId}: ${(err as Error).message}`);
     }
@@ -163,6 +167,7 @@ export class FilesService {
               id: true,
               name: true,
               thumbnailUrl: true,
+              thumbnailUrlDark: true,
               updatedAt: true,
               owner: { select: { name: true, email: true } },
             },
@@ -179,6 +184,7 @@ export class FilesService {
           id: s.file.id,
           name: s.file.name,
           thumbnailUrl: s.file.thumbnailUrl,
+          thumbnailUrlDark: s.file.thumbnailUrlDark,
           updatedAt: s.file.updatedAt,
           role: s.role,
           owner: s.file.owner,

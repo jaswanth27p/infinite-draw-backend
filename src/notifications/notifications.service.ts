@@ -100,8 +100,8 @@ export class NotificationsService {
     }
   }
 
-  notifyThumbnailUpdated(userIds: string[], fileId: string, thumbnailUrl: string): void {
-    const payload = { fileId, thumbnailUrl };
+  notifyThumbnailUpdated(userIds: string[], fileId: string, thumbnailUrl: string, thumbnailUrlDark?: string): void {
+    const payload = { fileId, thumbnailUrl, thumbnailUrlDark };
     for (const userId of userIds) {
       try {
         this.gateway.server.to(notificationRoom(userId)).emit('thumbnail-updated', payload);

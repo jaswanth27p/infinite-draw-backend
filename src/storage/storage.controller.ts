@@ -29,7 +29,7 @@ export class StorageController {
     const kind = dto.kind ?? 'thumbnail';
     const key =
       kind === 'thumbnail'
-        ? `thumbnails/${dto.fileId}/${Date.now()}.png`
+        ? `thumbnails/${dto.fileId}/${crypto.randomUUID()}.png`
         : `images/${dto.fileId}/${crypto.randomUUID()}.${IMAGE_CONTENT_TYPE_EXTENSION[dto.contentType as string]}`;
     const contentType = kind === 'thumbnail' ? THUMBNAIL_CONTENT_TYPE : (dto.contentType as string);
     const uploadUrl = await this.storageService.getPresignedUploadUrl(key, contentType);

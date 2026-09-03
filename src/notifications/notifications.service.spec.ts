@@ -47,6 +47,18 @@ describe('NotificationsService', () => {
         thumbnailUrl: 'thumb.png',
       });
     });
+
+    it('includes thumbnailUrlDark in the emitted payload when provided', () => {
+      const service = buildService();
+
+      service.notifyThumbnailUpdated(['user_1'], 'f1', 'light.png', 'dark.png');
+
+      expect(gatewayMock.server.emit).toHaveBeenCalledWith('thumbnail-updated', {
+        fileId: 'f1',
+        thumbnailUrl: 'light.png',
+        thumbnailUrlDark: 'dark.png',
+      });
+    });
   });
 
   describe('create', () => {

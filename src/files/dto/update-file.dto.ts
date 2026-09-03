@@ -13,4 +13,8 @@ export class UpdateFileDto {
   @IsOptional()
   @IsString()
   thumbnailUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  thumbnailUrlDark?: string;
 }

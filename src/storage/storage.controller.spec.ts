@@ -13,13 +13,26 @@ describe('StorageController', () => {
 
     expect(result).toEqual({
       uploadUrl: 'https://minio.local/signed',
-      key: expect.stringMatching(/^thumbnails\/f1\/\d+\.png$/),
+      key: expect.stringMatching(/^thumbnails\/f1\/[a-f0-9-]+\.png$/),
       publicUrl: 'https://minio.local/public',
     });
     expect(storageServiceMock.getPresignedUploadUrl).toHaveBeenCalledWith(
-      expect.stringMatching(/^thumbnails\/f1\/\d+\.png$/),
+      expect.stringMatching(/^thumbnails\/f1\/[a-f0-9-]+\.png$/),
       'image/png',
     );
+  });
+
+  it('kind: thumbnail derives a distinct key on every call (no overwrite between light and dark uploads)', async () => {
+    const storageServiceMock = {
+      getPresignedUploadUrl: jest.fn().mockResolvedValue('https://minio.local/signed'),
+      getPublicUrl: jest.fn().mockReturnValue('https://minio.local/public'),
+    } as unknown as StorageService;
+    const controller = new StorageController(storageServiceMock);
+
+    const first = await controller.presign({ fileId: 'f1' });
+    const second = await controller.presign({ fileId: 'f1' });
+
+    expect(first.key).not.toEqual(second.key);
   });
 
   it('kind: image derives an images/ key with the extension matching contentType, and passes contentType through to the presign call', async () => {

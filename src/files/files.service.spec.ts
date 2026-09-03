@@ -124,6 +124,27 @@ describe('FilesService', () => {
       ['owner_1', 'user_2', 'user_3'],
       'f5',
       'new.png',
+      undefined,
+    );
+  });
+
+  it('update writes and broadcasts both thumbnailUrl and thumbnailUrlDark when both are given', async () => {
+    const service = await buildService();
+    prismaMock.file.update.mockResolvedValue({ id: 'f5', thumbnailUrl: 'new.png', thumbnailUrlDark: 'new-dark.png' });
+    prismaMock.file.findUnique.mockResolvedValue({ ownerId: 'owner_1' });
+    prismaMock.share.findMany.mockResolvedValue([]);
+
+    await service.update('f5', { thumbnailUrl: 'new.png', thumbnailUrlDark: 'new-dark.png' });
+
+    expect(prismaMock.file.update).toHaveBeenCalledWith({
+      where: { id: 'f5' },
+      data: { thumbnailUrl: 'new.png', thumbnailUrlDark: 'new-dark.png' },
+    });
+    expect(notificationsServiceMock.notifyThumbnailUpdated).toHaveBeenCalledWith(
+      ['owner_1'],
+      'f5',
+      'new.png',
+      'new-dark.png',
     );
   });
 
@@ -391,6 +412,7 @@ describe('FilesService', () => {
             id: true,
             name: true,
             thumbnailUrl: true,
+            thumbnailUrlDark: true,
             updatedAt: true,
             owner: { select: { name: true, email: true } },
           },
@@ -455,7 +477,7 @@ describe('FilesService', () => {
         select: {
           id: true,
           file: {
-            select: { id: true, name: true, thumbnailUrl: true, updatedAt: true },
+            select: { id: true, name: true, thumbnailUrl: true, thumbnailUrlDark: true, updatedAt: true },
           },
         },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
