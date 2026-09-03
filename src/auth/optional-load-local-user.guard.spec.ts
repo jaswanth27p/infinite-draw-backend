@@ -1,4 +1,4 @@
-import { ExecutionContext } from '@nestjs/common';
+import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import * as clerkExpress from '@clerk/express';
 import { OptionalLoadLocalUserGuard } from './optional-load-local-user.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -36,13 +36,19 @@ describe('OptionalLoadLocalUserGuard', () => {
     expect(request.localUserId).toBe('user_1');
   });
 
-  it('leaves localUserId undefined when the session has no synced local user yet (no throw)', async () => {
+  it('throws ForbiddenException when a real Clerk session has no synced local user yet', async () => {
+    // A resolved clerkId means a real session/token is present — this is
+    // provisioning lag (webhook hasn't synced yet), not anonymity, so it
+    // must surface the same 403 LoadLocalUserGuard raises rather than
+    // silently falling through as anonymous.
     (clerkExpress.getAuth as jest.Mock).mockReturnValue({ userId: 'clerk_1' });
     prismaMock.user.findUnique.mockResolvedValue(null);
     const guard = new OptionalLoadLocalUserGuard(prismaMock as never);
     const request: Record<string, unknown> = {};
 
-    await expect(guard.canActivate(buildContext(request))).resolves.toBe(true);
+    await expect(guard.canActivate(buildContext(request))).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(request.localUserId).toBeUndefined();
   });
 });

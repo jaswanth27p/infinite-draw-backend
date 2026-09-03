@@ -19,9 +19,9 @@ export class SharesController {
   search(
     @Param('fileId') fileId: string,
     @CurrentLocalUserId() ownerId: string,
-    @Query('q') q: string,
+    @Query('q') q: unknown,
   ) {
-    return this.sharesService.search(fileId, ownerId, q ?? '');
+    return this.sharesService.search(fileId, ownerId, typeof q === 'string' ? q : '');
   }
 
   @Get()

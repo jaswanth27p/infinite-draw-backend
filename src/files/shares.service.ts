@@ -40,7 +40,7 @@ export class SharesService {
       SELECT id, name, email, "avatarUrl"
       FROM "User"
       WHERE id NOT IN (${Prisma.join(excludeIds)})
-        AND (email ILIKE ${'%' + q + '%'} OR name ILIKE ${'%' + q + '%'})
+        AND (email || ' ' || coalesce(name, '')) ILIKE ${'%' + q + '%'}
       ORDER BY similarity(email || ' ' || coalesce(name, ''), ${q}) DESC
       LIMIT 8;
     `;
