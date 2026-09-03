@@ -22,7 +22,7 @@ export class SharesService {
   list(fileId: string) {
     return this.prisma.share.findMany({
       where: { fileId },
-      select: { id: true, role: true, user: { select: { name: true, email: true } } },
+      select: { id: true, role: true, user: { select: { id: true, name: true, email: true } } },
       orderBy: { createdAt: 'asc' },
     });
   }

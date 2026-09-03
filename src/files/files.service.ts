@@ -123,6 +123,18 @@ export class FilesService {
     });
   }
 
+  // Deliberately separate from getAccess() rather than folded into it:
+  // getAccess() runs on every file HTTP request and every ~3s on every
+  // open realtime socket (CollabGateway#hasFloor's cache) — an owner join
+  // there would be a real, unnecessary hot-path cost. This only serves
+  // GET /files/:id, once per editor mount.
+  getOwnerInfo(ownerId: string) {
+    return this.prisma.user.findUnique({
+      where: { id: ownerId },
+      select: { id: true, name: true, email: true },
+    });
+  }
+
   async getAccess(
     fileId: string,
     userId: string | undefined,

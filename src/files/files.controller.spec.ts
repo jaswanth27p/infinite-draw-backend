@@ -71,6 +71,17 @@ describe('FilesController permanentDelete guard chain', () => {
   });
 });
 
+// Regression guard for sub-project 26's "verify general-access changes are
+// OWNER-only" ask: confirms the guard decorator that actually enforces this
+// (a non-owner's request never reaches this handler; FileAccessGuard 403s
+// before the controller method runs) is still attached, the same pattern
+// this file already uses for permanentDelete/star/unstar above.
+describe('FilesController generalAccess guard chain', () => {
+  it('requires OWNER role (non-owners are rejected by FileAccessGuard before this handler runs)', () => {
+    expect(Reflect.getMetadata(REQUIRE_ROLE_KEY, FilesController.prototype.generalAccess)).toBe('OWNER');
+  });
+});
+
 describe('FilesController star/unstar role requirement', () => {
   it('star requires only VIEWER role (starring needs read access, not edit/own access)', () => {
     expect(Reflect.getMetadata(REQUIRE_ROLE_KEY, FilesController.prototype.star)).toBe('VIEWER');
@@ -82,22 +93,30 @@ describe('FilesController star/unstar role requirement', () => {
 });
 
 describe('FilesController#get', () => {
-  const filesServiceMock = {};
+  const filesServiceMock = { getOwnerInfo: jest.fn() };
 
   function buildController() {
     return new FilesController(filesServiceMock as unknown as FilesService);
   }
 
-  it('get succeeds anonymously for a file with generalAccess ANYONE, always as VIEWER', () => {
+  it('get succeeds anonymously for a file with generalAccess ANYONE, always as VIEWER', async () => {
     // Build the controller directly (guards are unit-tested separately;
     // this exercises FilesController#get's own logic against a
     // CurrentFileAccess value FileAccessGuard would have attached).
     const controller = buildController();
-    const access = { file: { id: 'f1', name: 'Doc' }, role: 'VIEWER' as const };
+    const access = { file: { id: 'f1', name: 'Doc', ownerId: 'owner_1' }, role: 'VIEWER' as const };
+    filesServiceMock.getOwnerInfo.mockResolvedValue({ id: 'owner_1', name: 'Alice', email: 'alice@x.com' });
 
-    const result = controller.get(access as never);
+    const result = await controller.get(access as never);
 
-    expect(result).toEqual({ id: 'f1', name: 'Doc', role: 'VIEWER' });
+    expect(filesServiceMock.getOwnerInfo).toHaveBeenCalledWith('owner_1');
+    expect(result).toEqual({
+      id: 'f1',
+      name: 'Doc',
+      ownerId: 'owner_1',
+      role: 'VIEWER',
+      owner: { id: 'owner_1', name: 'Alice', email: 'alice@x.com' },
+    });
   });
 });
 

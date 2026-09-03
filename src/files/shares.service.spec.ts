@@ -25,16 +25,18 @@ describe('SharesService', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('list returns shares with the invited user\'s name/email', async () => {
+  it("list returns shares with the invited user's id/name/email", async () => {
     const service = await buildService();
-    prismaMock.share.findMany.mockResolvedValue([{ id: 's1', role: 'VIEWER', user: { name: 'A', email: 'a@x.com' } }]);
+    prismaMock.share.findMany.mockResolvedValue([
+      { id: 's1', role: 'VIEWER', user: { id: 'user_2', name: 'A', email: 'a@x.com' } },
+    ]);
 
     const result = await service.list('f1');
 
-    expect(result).toEqual([{ id: 's1', role: 'VIEWER', user: { name: 'A', email: 'a@x.com' } }]);
+    expect(result).toEqual([{ id: 's1', role: 'VIEWER', user: { id: 'user_2', name: 'A', email: 'a@x.com' } }]);
     expect(prismaMock.share.findMany).toHaveBeenCalledWith({
       where: { fileId: 'f1' },
-      select: { id: true, role: true, user: { select: { name: true, email: true } } },
+      select: { id: true, role: true, user: { select: { id: true, name: true, email: true } } },
       orderBy: { createdAt: 'asc' },
     });
   });

@@ -116,8 +116,9 @@ export class FilesController {
   @Get(':id')
   @UseGuards(FileAccessGuard)
   @RequireRole('VIEWER')
-  get(@CurrentFileAccess() access: FileAccess) {
-    return { ...access.file, role: access.role };
+  async get(@CurrentFileAccess() access: FileAccess) {
+    const owner = await this.filesService.getOwnerInfo(access.file.ownerId);
+    return { ...access.file, role: access.role, owner };
   }
 
   @Patch(':id')
