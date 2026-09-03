@@ -264,6 +264,33 @@ describe('FilesService', () => {
         where: { id: 'missing', deletedAt: null },
       });
     });
+
+    it('resolves anonymous access as VIEWER when generalAccess is ANYONE, regardless of generalAccessRole', async () => {
+      const service = await buildService();
+      prismaMock.file.findFirst.mockResolvedValue({
+        id: 'f1',
+        ownerId: 'owner_1',
+        generalAccess: 'ANYONE',
+        generalAccessRole: 'EDITOR',
+      });
+
+      const result = await service.getAccess('f1', undefined);
+
+      expect(result).toEqual({ role: 'VIEWER', file: expect.objectContaining({ id: 'f1' }) });
+      expect(prismaMock.share.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('returns null for anonymous access when generalAccess is RESTRICTED', async () => {
+      const service = await buildService();
+      prismaMock.file.findFirst.mockResolvedValue({
+        id: 'f1',
+        ownerId: 'owner_1',
+        generalAccess: 'RESTRICTED',
+        generalAccessRole: null,
+      });
+
+      await expect(service.getAccess('f1', undefined)).resolves.toBeNull();
+    });
   });
 
   describe('updateGeneralAccess', () => {

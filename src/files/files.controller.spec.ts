@@ -1,5 +1,8 @@
-import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
+import { PATH_METADATA, METHOD_METADATA, GUARDS_METADATA } from '@nestjs/common/constants';
 import { FilesController } from './files.controller';
+import { FilesService } from './files.service';
+import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
+import { LoadLocalUserGuard } from '../auth/load-local-user.guard';
 import { REQUIRE_ROLE_KEY } from './require-role.decorator';
 import { ALLOW_DELETED_KEY } from './allow-deleted.decorator';
 
@@ -69,5 +72,63 @@ describe('FilesController star/unstar role requirement', () => {
 
   it('unstar requires only VIEWER role', () => {
     expect(Reflect.getMetadata(REQUIRE_ROLE_KEY, FilesController.prototype.unstar)).toBe('VIEWER');
+  });
+});
+
+describe('FilesController#get', () => {
+  const filesServiceMock = {};
+
+  function buildController() {
+    return new FilesController(filesServiceMock as unknown as FilesService);
+  }
+
+  it('get succeeds anonymously for a file with generalAccess ANYONE, always as VIEWER', () => {
+    // Build the controller directly (guards are unit-tested separately;
+    // this exercises FilesController#get's own logic against a
+    // CurrentFileAccess value FileAccessGuard would have attached).
+    const controller = buildController();
+    const access = { file: { id: 'f1', name: 'Doc' }, role: 'VIEWER' as const };
+
+    const result = controller.get(access as never);
+
+    expect(result).toEqual({ id: 'f1', name: 'Doc', role: 'VIEWER' });
+  });
+});
+
+// Anonymous-access guard-wiring regression guard. Task 3 relaxed the
+// class-level guards to OptionalClerkAuthGuard/OptionalLoadLocalUserGuard so
+// GET /files/:id can run without a session — but every other route on this
+// controller must still fail closed with no token, exactly as before. This
+// test pins the ClerkAuthGuard/LoadLocalUserGuard pair back onto every
+// non-`get` handler via @UseGuards' own metadata, so a future edit that
+// forgets to re-declare them on a route is caught here even though
+// tsc/build and the service-level tests stay green.
+describe('FilesController guard wiring (anonymous access only for GET /files/:id)', () => {
+  const guardedMethods = [
+    'list',
+    'create',
+    'shared',
+    'starred',
+    'trash',
+    'update',
+    'generalAccess',
+    'remove',
+    'restore',
+    'permanentDelete',
+    'star',
+    'unstar',
+  ] as const;
+
+  it('every mutating/list route still requires auth (ClerkAuthGuard + LoadLocalUserGuard are explicitly re-declared, not relying on the now-optional class guards)', () => {
+    for (const method of guardedMethods) {
+      const guards = Reflect.getMetadata(GUARDS_METADATA, FilesController.prototype[method]);
+      expect(guards).toEqual(expect.arrayContaining([ClerkAuthGuard, LoadLocalUserGuard]));
+    }
+  });
+
+  it("get's only guard is FileAccessGuard, relying on the optional class-level guards for anonymous access", () => {
+    const guards = Reflect.getMetadata(GUARDS_METADATA, FilesController.prototype.get);
+    expect(guards).not.toEqual(expect.arrayContaining([ClerkAuthGuard]));
+    expect(guards).not.toEqual(expect.arrayContaining([LoadLocalUserGuard]));
   });
 });

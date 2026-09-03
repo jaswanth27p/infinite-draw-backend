@@ -56,7 +56,7 @@ export class FileAccessGuard implements CanActivate {
       this.reflector.getAllAndOverride<boolean>(ALLOW_DELETED_KEY, [context.getHandler(), context.getClass()]) ??
       false;
 
-    const access = await this.filesService.getAccess(fileId, request.localUserId as string, {
+    const access = await this.filesService.getAccess(fileId, request.localUserId, {
       includeDeleted: allowDeleted,
     });
     if (!access) {

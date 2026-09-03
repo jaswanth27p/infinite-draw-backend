@@ -5,6 +5,8 @@ import { StorageController } from '../storage/storage.controller';
 import { SharesController } from '../files/shares.controller';
 import { ClerkAuthGuard } from './clerk-auth.guard';
 import { LoadLocalUserGuard } from './load-local-user.guard';
+import { OptionalClerkAuthGuard } from './optional-clerk-auth.guard';
+import { OptionalLoadLocalUserGuard } from './optional-load-local-user.guard';
 import { FileAccessGuard } from '../files/file-access.guard';
 import { REQUIRE_ROLE_KEY } from '../files/require-role.decorator';
 import { CollabGateway } from '../realtime/collab.gateway';
@@ -20,7 +22,6 @@ const GUARDS_METADATA_KEY = '__guards__';
 const WS_GUARDS_METADATA_KEY = '__guards__';
 
 describe.each([
-  ['FilesController', FilesController],
   ['FileVersionsController', FileVersionsController],
   ['StorageController', StorageController],
   ['NotificationsController', NotificationsController],
@@ -33,6 +34,54 @@ describe.each([
 
     expect(guards).toContain(ClerkAuthGuard);
     expect(guards).toContain(LoadLocalUserGuard);
+  });
+});
+
+// FilesController is the one exception to the blanket class-level
+// ClerkAuthGuard/LoadLocalUserGuard pattern above: Task 3 (anonymous
+// VIEWER access to generalAccess: ANYONE files) relaxed its class-level
+// guards to the optional variants so GET /files/:id can run with no
+// session, then re-declared ClerkAuthGuard/LoadLocalUserGuard explicitly
+// on every other handler. This block pins both halves of that wiring so a
+// future edit can't silently widen anonymous access to a mutating/list
+// route, or silently narrow GET /files/:id back to requiring auth.
+describe('FilesController guard wiring', () => {
+  it('is guarded at the class level by the optional variants, not the hard-401 ones', () => {
+    const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA_KEY, FilesController) ?? [];
+
+    expect(guards).toContain(OptionalClerkAuthGuard);
+    expect(guards).toContain(OptionalLoadLocalUserGuard);
+    expect(guards).not.toContain(ClerkAuthGuard);
+    expect(guards).not.toContain(LoadLocalUserGuard);
+  });
+
+  it.each([
+    'list',
+    'create',
+    'shared',
+    'starred',
+    'trash',
+    'update',
+    'generalAccess',
+    'remove',
+    'restore',
+    'permanentDelete',
+    'star',
+    'unstar',
+  ] as const)('%s re-declares ClerkAuthGuard and LoadLocalUserGuard explicitly', (methodName) => {
+    const handler = (FilesController.prototype as Record<string, unknown>)[methodName];
+    const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA_KEY, handler as object) ?? [];
+
+    expect(guards).toContain(ClerkAuthGuard);
+    expect(guards).toContain(LoadLocalUserGuard);
+  });
+
+  it('get has no ClerkAuthGuard/LoadLocalUserGuard of its own — anonymous access relies on the optional class guards plus FileAccessGuard/getAccess', () => {
+    const guards: unknown[] = Reflect.getMetadata(GUARDS_METADATA_KEY, FilesController.prototype.get) ?? [];
+
+    expect(guards).not.toContain(ClerkAuthGuard);
+    expect(guards).not.toContain(LoadLocalUserGuard);
+    expect(guards).toContain(FileAccessGuard);
   });
 });
 

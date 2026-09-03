@@ -121,13 +121,19 @@ export class FilesService {
 
   async getAccess(
     fileId: string,
-    userId: string,
+    userId: string | undefined,
     options?: { includeDeleted?: boolean },
   ): Promise<{ file: Awaited<ReturnType<typeof this.prisma.file.findFirst>> & object; role: Role } | null> {
     const file = await this.prisma.file.findFirst({
       where: { id: fileId, ...(options?.includeDeleted ? {} : { deletedAt: null }) },
     });
     if (!file) {
+      return null;
+    }
+    if (userId === undefined) {
+      if (file.generalAccess === 'ANYONE') {
+        return { file, role: 'VIEWER' };
+      }
       return null;
     }
     if (file.ownerId === userId) {

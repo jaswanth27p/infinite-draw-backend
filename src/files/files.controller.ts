@@ -11,6 +11,8 @@ import {
 } from '@nestjs/common';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { LoadLocalUserGuard } from '../auth/load-local-user.guard';
+import { OptionalClerkAuthGuard } from '../auth/optional-clerk-auth.guard';
+import { OptionalLoadLocalUserGuard } from '../auth/optional-load-local-user.guard';
 import { CurrentLocalUserId } from '../auth/current-local-user-id.decorator';
 import { FileAccessGuard } from './file-access.guard';
 import { RequireRole } from './require-role.decorator';
@@ -29,11 +31,12 @@ function clampLimit(raw: string | undefined, fallback: number): number {
 }
 
 @Controller('files')
-@UseGuards(ClerkAuthGuard, LoadLocalUserGuard)
+@UseGuards(OptionalClerkAuthGuard, OptionalLoadLocalUserGuard)
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
   @Get()
+  @UseGuards(ClerkAuthGuard, LoadLocalUserGuard)
   async list(
     @CurrentLocalUserId() ownerId: string,
     @Query('cursor') cursor?: string,
@@ -43,11 +46,13 @@ export class FilesController {
   }
 
   @Post()
+  @UseGuards(ClerkAuthGuard, LoadLocalUserGuard)
   create(@CurrentLocalUserId() ownerId: string) {
     return this.filesService.create(ownerId);
   }
 
   @Get('shared')
+  @UseGuards(ClerkAuthGuard, LoadLocalUserGuard)
   async shared(
     @CurrentLocalUserId() userId: string,
     @Query('cursor') cursor?: string,
@@ -57,6 +62,7 @@ export class FilesController {
   }
 
   @Get('starred')
+  @UseGuards(ClerkAuthGuard, LoadLocalUserGuard)
   starred(
     @CurrentLocalUserId() userId: string,
     @Query('cursor') cursor?: string,
@@ -66,6 +72,7 @@ export class FilesController {
   }
 
   @Get('trash')
+  @UseGuards(ClerkAuthGuard, LoadLocalUserGuard)
   trash(
     @CurrentLocalUserId() userId: string,
     @Query('cursor') cursor?: string,
@@ -82,28 +89,28 @@ export class FilesController {
   }
 
   @Patch(':id')
-  @UseGuards(FileAccessGuard)
+  @UseGuards(ClerkAuthGuard, LoadLocalUserGuard, FileAccessGuard)
   @RequireRole('EDITOR')
   update(@Param('id') id: string, @Body() dto: UpdateFileDto) {
     return this.filesService.update(id, dto);
   }
 
   @Patch(':id/general-access')
-  @UseGuards(FileAccessGuard)
+  @UseGuards(ClerkAuthGuard, LoadLocalUserGuard, FileAccessGuard)
   @RequireRole('OWNER')
   generalAccess(@Param('id') id: string, @Body() dto: UpdateGeneralAccessDto) {
     return this.filesService.updateGeneralAccess(id, dto);
   }
 
   @Delete(':id')
-  @UseGuards(FileAccessGuard)
+  @UseGuards(ClerkAuthGuard, LoadLocalUserGuard, FileAccessGuard)
   @RequireRole('OWNER')
   remove(@CurrentFileAccess() access: FileAccess) {
     return this.filesService.softDelete(access.file.id);
   }
 
   @Post(':id/restore')
-  @UseGuards(FileAccessGuard)
+  @UseGuards(ClerkAuthGuard, LoadLocalUserGuard, FileAccessGuard)
   @RequireRole('OWNER')
   @AllowDeleted()
   restore(@CurrentFileAccess() access: FileAccess) {
@@ -111,7 +118,7 @@ export class FilesController {
   }
 
   @Delete(':id/permanent')
-  @UseGuards(FileAccessGuard)
+  @UseGuards(ClerkAuthGuard, LoadLocalUserGuard, FileAccessGuard)
   @RequireRole('OWNER')
   @AllowDeleted()
   permanentDelete(@CurrentFileAccess() access: FileAccess) {
@@ -119,14 +126,14 @@ export class FilesController {
   }
 
   @Post(':id/star')
-  @UseGuards(FileAccessGuard)
+  @UseGuards(ClerkAuthGuard, LoadLocalUserGuard, FileAccessGuard)
   @RequireRole('VIEWER')
   star(@CurrentFileAccess() access: FileAccess, @CurrentLocalUserId() userId: string) {
     return this.filesService.star(userId, access.file.id);
   }
 
   @Delete(':id/star')
-  @UseGuards(FileAccessGuard)
+  @UseGuards(ClerkAuthGuard, LoadLocalUserGuard, FileAccessGuard)
   @RequireRole('VIEWER')
   unstar(@CurrentFileAccess() access: FileAccess, @CurrentLocalUserId() userId: string) {
     return this.filesService.unstar(userId, access.file.id);
