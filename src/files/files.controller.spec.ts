@@ -37,14 +37,20 @@ describe('FilesController route declaration order', () => {
     expect(indexOf('trash')).toBeLessThan(indexOf('get'));
   });
 
+  it("declares the literal 'search' route before the ':id' route (sub-project 24)", () => {
+    expect(indexOf('search')).toBeLessThan(indexOf('get'));
+  });
+
   it("sanity-checks the path metadata actually attached to each handler, so this test can't pass by coincidentally matching unrelated method names", () => {
     expect(Reflect.getMetadata(PATH_METADATA, FilesController.prototype.starred)).toBe('starred');
     expect(Reflect.getMetadata(PATH_METADATA, FilesController.prototype.trash)).toBe('trash');
+    expect(Reflect.getMetadata(PATH_METADATA, FilesController.prototype.search)).toBe('search');
     expect(Reflect.getMetadata(PATH_METADATA, FilesController.prototype.get)).toBe(':id');
-    // All three are GET handlers — the method (not just the path) has to
+    // All four are GET handlers — the method (not just the path) has to
     // match for Nest to even consider a route a candidate.
     expect(Reflect.getMetadata(METHOD_METADATA, FilesController.prototype.starred)).toBe(0); // RequestMethod.GET
     expect(Reflect.getMetadata(METHOD_METADATA, FilesController.prototype.trash)).toBe(0);
+    expect(Reflect.getMetadata(METHOD_METADATA, FilesController.prototype.search)).toBe(0);
     expect(Reflect.getMetadata(METHOD_METADATA, FilesController.prototype.get)).toBe(0);
   });
 });
@@ -110,6 +116,7 @@ describe('FilesController guard wiring (anonymous access only for GET /files/:id
     'shared',
     'starred',
     'trash',
+    'search',
     'update',
     'generalAccess',
     'remove',
@@ -130,5 +137,48 @@ describe('FilesController guard wiring (anonymous access only for GET /files/:id
     const guards = Reflect.getMetadata(GUARDS_METADATA, FilesController.prototype.get);
     expect(guards).not.toEqual(expect.arrayContaining([ClerkAuthGuard]));
     expect(guards).not.toEqual(expect.arrayContaining([LoadLocalUserGuard]));
+  });
+});
+
+// Regression guard for a real bug caught during sub-project 24's final
+// review: Postgres throws a hard runtime error for an unrecognized value
+// in an enum-typed WHERE clause (`invalid input value for enum
+// "ShareRole"`), confirmed directly against a live instance — it does
+// NOT silently match zero rows. An unvalidated ?role= query param would
+// therefore 500 the whole request instead of degrading gracefully.
+describe('FilesController#shared role filter validation', () => {
+  const filesServiceMock = { listShared: jest.fn() };
+
+  function buildController() {
+    return new FilesController(filesServiceMock as unknown as FilesService);
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('forwards a valid role value to the service unchanged', async () => {
+    const controller = buildController();
+    filesServiceMock.listShared.mockResolvedValue({ items: [], nextCursor: null });
+
+    await controller.shared('user_1', undefined, undefined, undefined, 'EDITOR');
+
+    expect(filesServiceMock.listShared).toHaveBeenCalledWith('user_1', undefined, 30, undefined, 'EDITOR');
+  });
+
+  it('drops an invalid/garbage role value instead of forwarding it to Prisma', async () => {
+    const controller = buildController();
+    filesServiceMock.listShared.mockResolvedValue({ items: [], nextCursor: null });
+
+    await controller.shared('user_1', undefined, undefined, undefined, 'GARBAGE_VALUE');
+
+    expect(filesServiceMock.listShared).toHaveBeenCalledWith('user_1', undefined, 30, undefined, undefined);
+  });
+
+  it('treats a missing role query param the same as no filter', async () => {
+    const controller = buildController();
+    filesServiceMock.listShared.mockResolvedValue({ items: [], nextCursor: null });
+
+    await controller.shared('user_1', undefined, undefined, undefined, undefined);
+
+    expect(filesServiceMock.listShared).toHaveBeenCalledWith('user_1', undefined, 30, undefined, undefined);
   });
 });

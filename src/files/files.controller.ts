@@ -30,6 +30,19 @@ function clampLimit(raw: string | undefined, fallback: number): number {
   return Math.min(parsed, 50);
 }
 
+const SHARE_ROLE_VALUES = ['VIEWER', 'COMMENTER', 'EDITOR'] as const;
+type ShareRoleFilter = (typeof SHARE_ROLE_VALUES)[number];
+
+// Postgres throws a hard runtime error for an unrecognized value in an
+// enum-typed WHERE clause (`invalid input value for enum "ShareRole"`),
+// not a silent zero-row match — confirmed directly against a live
+// instance. An unvalidated ?role= query param would 500 the whole
+// request instead of degrading gracefully, so a garbage/typo'd value is
+// treated as "no filter" here rather than ever reaching Prisma.
+function parseRoleFilter(raw: string | undefined): ShareRoleFilter | undefined {
+  return SHARE_ROLE_VALUES.includes(raw as ShareRoleFilter) ? (raw as ShareRoleFilter) : undefined;
+}
+
 @Controller('files')
 @UseGuards(OptionalClerkAuthGuard, OptionalLoadLocalUserGuard)
 export class FilesController {
@@ -61,7 +74,7 @@ export class FilesController {
     @Query('q') q?: string,
     @Query('role') role?: string,
   ) {
-    return this.filesService.listShared(userId, cursor, clampLimit(limit, 30), q, role as never);
+    return this.filesService.listShared(userId, cursor, clampLimit(limit, 30), q, parseRoleFilter(role));
   }
 
   @Get('starred')
