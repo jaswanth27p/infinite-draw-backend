@@ -8,6 +8,7 @@ describe('SharesService', () => {
   const prismaMock = {
     user: { findUnique: jest.fn() },
     share: { findMany: jest.fn(), upsert: jest.fn(), findFirst: jest.fn(), update: jest.fn(), delete: jest.fn() },
+    $queryRaw: jest.fn(),
   };
   const notificationsServiceMock = { create: jest.fn() };
 
@@ -38,14 +39,39 @@ describe('SharesService', () => {
     });
   });
 
-  it('invite upserts a Share for an existing user by email', async () => {
+  it('search excludes the owner and existing shares, returns up to 8 matches', async () => {
+    const service = await buildService();
+    prismaMock.share.findMany.mockResolvedValue([{ userId: 'user_2' }]);
+    prismaMock.$queryRaw.mockResolvedValue([
+      { id: 'user_3', name: 'Cara', email: 'cara@x.com', avatarUrl: null },
+    ]);
+
+    const result = await service.search('f1', 'owner_1', 'car');
+
+    expect(result).toEqual([{ id: 'user_3', name: 'Cara', email: 'cara@x.com', avatarUrl: null }]);
+    expect(prismaMock.share.findMany).toHaveBeenCalledWith({
+      where: { fileId: 'f1' },
+      select: { userId: true },
+    });
+    expect(prismaMock.$queryRaw).toHaveBeenCalled();
+  });
+
+  it('search rejects a query shorter than 3 characters', async () => {
+    const service = await buildService();
+
+    await expect(service.search('f1', 'owner_1', 'ab')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prismaMock.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it('invite upserts a Share for an existing user by id', async () => {
     const service = await buildService();
     prismaMock.user.findUnique.mockResolvedValue({ id: 'user_2', email: 'b@x.com' });
     prismaMock.share.upsert.mockResolvedValue({ id: 's1', role: 'EDITOR' });
 
-    const result = await service.invite('f1', 'owner_1', 'Q3 Roadmap', { email: 'b@x.com', role: 'EDITOR' as never });
+    const result = await service.invite('f1', 'owner_1', 'Q3 Roadmap', { userId: 'user_2', role: 'EDITOR' as never });
 
     expect(result).toEqual({ id: 's1', role: 'EDITOR' });
+    expect(prismaMock.user.findUnique).toHaveBeenCalledWith({ where: { id: 'user_2' } });
     expect(prismaMock.share.upsert).toHaveBeenCalledWith({
       where: { fileId_userId: { fileId: 'f1', userId: 'user_2' } },
       create: { fileId: 'f1', userId: 'user_2', role: 'EDITOR' },
@@ -58,7 +84,7 @@ describe('SharesService', () => {
     prismaMock.user.findUnique.mockResolvedValue({ id: 'user_2', email: 'b@x.com' });
     prismaMock.share.upsert.mockResolvedValue({ id: 's1', role: 'EDITOR' });
 
-    await service.invite('f1', 'owner_1', 'Q3 Roadmap', { email: 'b@x.com', role: 'EDITOR' as never });
+    await service.invite('f1', 'owner_1', 'Q3 Roadmap', { userId: 'user_2', role: 'EDITOR' as never });
 
     expect(notificationsServiceMock.create).toHaveBeenCalledWith({
       recipientId: 'user_2',
@@ -69,12 +95,12 @@ describe('SharesService', () => {
     });
   });
 
-  it('invite throws NotFoundException when the email has no account', async () => {
+  it('invite throws NotFoundException when the userId has no account', async () => {
     const service = await buildService();
     prismaMock.user.findUnique.mockResolvedValue(null);
 
     await expect(
-      service.invite('f1', 'owner_1', 'Q3 Roadmap', { email: 'nobody@x.com', role: 'VIEWER' as never }),
+      service.invite('f1', 'owner_1', 'Q3 Roadmap', { userId: 'missing', role: 'VIEWER' as never }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(prismaMock.share.upsert).not.toHaveBeenCalled();
     expect(notificationsServiceMock.create).not.toHaveBeenCalled();
@@ -85,7 +111,7 @@ describe('SharesService', () => {
     prismaMock.user.findUnique.mockResolvedValue({ id: 'owner_1', email: 'owner@x.com' });
 
     await expect(
-      service.invite('f1', 'owner_1', 'Q3 Roadmap', { email: 'owner@x.com', role: 'VIEWER' as never }),
+      service.invite('f1', 'owner_1', 'Q3 Roadmap', { userId: 'owner_1', role: 'VIEWER' as never }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prismaMock.share.upsert).not.toHaveBeenCalled();
     expect(notificationsServiceMock.create).not.toHaveBeenCalled();

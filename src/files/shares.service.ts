@@ -1,8 +1,16 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateShareDto } from './dto/create-share.dto';
 import { UpdateShareDto } from './dto/update-share.dto';
+
+export interface SearchRow {
+  id: string;
+  name: string | null;
+  email: string;
+  avatarUrl: string | null;
+}
 
 @Injectable()
 export class SharesService {
@@ -19,10 +27,29 @@ export class SharesService {
     });
   }
 
+  async search(fileId: string, ownerId: string, q: string): Promise<SearchRow[]> {
+    if (q.length < 3) {
+      throw new BadRequestException('Search query must be at least 3 characters');
+    }
+    const excluded = await this.prisma.share.findMany({
+      where: { fileId },
+      select: { userId: true },
+    });
+    const excludeIds = [ownerId, ...excluded.map((s) => s.userId)];
+    return this.prisma.$queryRaw<SearchRow[]>`
+      SELECT id, name, email, "avatarUrl"
+      FROM "User"
+      WHERE id NOT IN (${Prisma.join(excludeIds)})
+        AND (email ILIKE ${'%' + q + '%'} OR name ILIKE ${'%' + q + '%'})
+      ORDER BY similarity(email || ' ' || coalesce(name, ''), ${q}) DESC
+      LIMIT 8;
+    `;
+  }
+
   async invite(fileId: string, ownerId: string, fileName: string, dto: CreateShareDto) {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const user = await this.prisma.user.findUnique({ where: { id: dto.userId } });
     if (!user) {
-      throw new NotFoundException('No account found for that email');
+      throw new NotFoundException('No account found for that user');
     }
     if (user.id === ownerId) {
       throw new BadRequestException("Can't share a file with its own owner");

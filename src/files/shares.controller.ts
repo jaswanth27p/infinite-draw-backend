@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { LoadLocalUserGuard } from '../auth/load-local-user.guard';
 import { CurrentLocalUserId } from '../auth/current-local-user-id.decorator';
@@ -14,6 +14,15 @@ import { UpdateShareDto } from './dto/update-share.dto';
 @RequireRole('OWNER')
 export class SharesController {
   constructor(private readonly sharesService: SharesService) {}
+
+  @Get('search')
+  search(
+    @Param('fileId') fileId: string,
+    @CurrentLocalUserId() ownerId: string,
+    @Query('q') q: string,
+  ) {
+    return this.sharesService.search(fileId, ownerId, q ?? '');
+  }
 
   @Get()
   list(@Param('fileId') fileId: string) {
