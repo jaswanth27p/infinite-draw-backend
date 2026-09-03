@@ -244,7 +244,7 @@ export class CollabGateway implements OnGatewayConnection {
   @SubscribeMessage('send-chat-message')
   async handleSendChatMessage(
     @ConnectedSocket() client: CollabSocket,
-    @MessageBody() body: { fileId: string; body: string },
+    @MessageBody() body: { fileId: string; body: string; mentionedUserIds?: string[] },
   ) {
     if (!isValidFileId(body?.fileId)) {
       return;
@@ -254,7 +254,7 @@ export class CollabGateway implements OnGatewayConnection {
     }
 
     const message = await this.chatService
-      .create(body.fileId, client.data.localUserId, body.body)
+      .create(body.fileId, client.data.localUserId, body.body, body.mentionedUserIds ?? [])
       .catch((err) => {
         this.logger.warn(
           `send-chat-message dropped for file ${body.fileId}: ${(err as Error).message}`,

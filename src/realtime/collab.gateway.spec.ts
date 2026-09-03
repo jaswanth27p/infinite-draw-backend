@@ -446,7 +446,7 @@ describe('CollabGateway', () => {
 
       const result = await gateway.handleSendChatMessage(client, { fileId: 'f1', body: 'hello' });
 
-      expect(chatServiceMock.create).toHaveBeenCalledWith('f1', 'local_1', 'hello');
+      expect(chatServiceMock.create).toHaveBeenCalledWith('f1', 'local_1', 'hello', []);
       // Sender excluded: `client.to(...)`, not `gateway.server.to(...)` —
       // the sender learns of their own message only via the returned ack,
       // so there's exactly one delivery path and nothing to race.
@@ -454,6 +454,21 @@ describe('CollabGateway', () => {
       expect(client.emit).toHaveBeenCalledWith('chat-message', message);
       expect(gateway.server.to).not.toHaveBeenCalled();
       expect(result).toEqual(message);
+    });
+
+    it('forwards mentionedUserIds through to ChatService.create when provided', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'COMMENTER', file: { id: 'f1' } });
+      chatServiceMock.create.mockResolvedValue(message);
+      gateway.server = createServerMock([]);
+      const client = createClient();
+
+      await gateway.handleSendChatMessage(client, {
+        fileId: 'f1',
+        body: 'hello',
+        mentionedUserIds: ['user_2'],
+      });
+
+      expect(chatServiceMock.create).toHaveBeenCalledWith('f1', 'local_1', 'hello', ['user_2']);
     });
 
     it('handleSendChatMessage rejects a VIEWER (below COMMENTER floor)', async () => {
