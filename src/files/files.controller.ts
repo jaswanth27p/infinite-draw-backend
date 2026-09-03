@@ -86,6 +86,20 @@ export class FilesController {
     return this.filesService.listTrash(userId, cursor, clampLimit(limit, 30), q);
   }
 
+  // Must stay declared before @Get(':id') below -- Nest matches routes in
+  // declaration order, and a catch-all :id param route declared first
+  // would swallow /files/search as id: 'search'.
+  @Get('search')
+  @UseGuards(ClerkAuthGuard, LoadLocalUserGuard)
+  async search(
+    @CurrentLocalUserId() userId: string,
+    @Query('q') q: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.filesService.search(userId, q ?? '', cursor, clampLimit(limit, 30));
+  }
+
   @Get(':id')
   @UseGuards(FileAccessGuard)
   @RequireRole('VIEWER')

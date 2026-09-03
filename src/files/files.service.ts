@@ -198,6 +198,64 @@ export class FilesService {
       });
   }
 
+  // Prisma has no native UNION, so the id-selection step is raw SQL only
+  // (owned files UNION explicitly-shared files, both name-filtered);
+  // everything else (fetching full rows, attaching starred/role/owner)
+  // stays plain Prisma. findMany's `id: { in: ids } }` makes no ordering
+  // guarantee, so results are re-sorted to match the raw query's own
+  // ORDER BY -- that's what the ids.map(...).filter(...) step below is
+  // for, not just a shape transform. Pagination is offset-based under the
+  // hood (a keyset cursor across a UNION is real complexity this
+  // search-results feature doesn't need) but the opaque cursor string
+  // this returns is wire-compatible with every other list endpoint's
+  // contract, so the frontend's shared pagination hook needs no special
+  // case for this one route.
+  async search(userId: string, q: string, cursor?: string, take = 30) {
+    const offset = cursor ? Number(cursor) : 0;
+    const pattern = `%${q}%`;
+    const idRows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT id FROM (
+        SELECT id, "updatedAt" FROM "File"
+        WHERE "ownerId" = ${userId} AND "deletedAt" IS NULL AND name ILIKE ${pattern}
+        UNION
+        SELECT f.id, f."updatedAt" FROM "File" f
+        JOIN "Share" s ON s."fileId" = f.id
+        WHERE s."userId" = ${userId} AND f."deletedAt" IS NULL AND f.name ILIKE ${pattern}
+      ) combined
+      ORDER BY "updatedAt" DESC
+      LIMIT ${take + 1} OFFSET ${offset};
+    `;
+    const hasMore = idRows.length > take;
+    const page = hasMore ? idRows.slice(0, take) : idRows;
+    const ids = page.map((r) => r.id);
+
+    if (ids.length === 0) {
+      return { items: [], nextCursor: null };
+    }
+
+    const [files, shares] = await Promise.all([
+      this.prisma.file.findMany({ where: { id: { in: ids } }, select: FILE_LIST_SELECT }),
+      this.prisma.share.findMany({
+        where: { userId, fileId: { in: ids } },
+        select: { fileId: true, role: true, file: { select: { owner: { select: { name: true, email: true } } } } },
+      }),
+    ]);
+
+    const shareByFileId = new Map(shares.map((s) => [s.fileId, s]));
+    const fileById = new Map(files.map((f) => [f.id, f]));
+    const merged = ids
+      .map((id) => {
+        const file = fileById.get(id);
+        if (!file) return null;
+        const share = shareByFileId.get(id);
+        return share ? { ...file, role: share.role, owner: share.file.owner } : file;
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+
+    const items = await this.withStarred(userId, merged);
+    return { items, nextCursor: hasMore ? String(offset + take) : null };
+  }
+
   async updateGeneralAccess(id: string, dto: UpdateGeneralAccessDto) {
     if (dto.generalAccess === GeneralAccess.ANYONE && !dto.generalAccessRole) {
       throw new BadRequestException('generalAccessRole is required when generalAccess is ANYONE');

@@ -24,6 +24,7 @@ describe('FilesService', () => {
       deleteMany: jest.fn(),
       findMany: jest.fn(),
     },
+    $queryRaw: jest.fn(),
   };
   const notificationsServiceMock = { create: jest.fn(), notifyThumbnailUpdated: jest.fn() };
 
@@ -907,6 +908,81 @@ describe('FilesService', () => {
           where: { userId: 'user_2', file: { deletedAt: null } },
         }),
       );
+    });
+  });
+
+  describe('search', () => {
+    it('returns owned files without a role/owner, and shared files with role+owner attached', async () => {
+      const service = await buildService();
+      prismaMock.$queryRaw.mockResolvedValue([{ id: 'f1' }, { id: 'f2' }]);
+      prismaMock.file.findMany.mockResolvedValue([
+        { id: 'f1', name: 'Owned', thumbnailUrl: null, thumbnailUrlDark: null, updatedAt: new Date('2026-01-02') },
+        { id: 'f2', name: 'Shared with me', thumbnailUrl: null, thumbnailUrlDark: null, updatedAt: new Date('2026-01-01') },
+      ]);
+      prismaMock.share.findMany.mockResolvedValue([
+        { fileId: 'f2', role: 'EDITOR', file: { owner: { name: 'Alice', email: 'alice@x.com' } } },
+      ]);
+      prismaMock.star.findMany.mockResolvedValue([]);
+
+      const result = await service.search('user_1', 'roadmap');
+
+      expect(result.items).toEqual([
+        { id: 'f1', name: 'Owned', thumbnailUrl: null, thumbnailUrlDark: null, updatedAt: new Date('2026-01-02'), starred: false },
+        {
+          id: 'f2',
+          name: 'Shared with me',
+          thumbnailUrl: null,
+          thumbnailUrlDark: null,
+          updatedAt: new Date('2026-01-01'),
+          starred: false,
+          role: 'EDITOR',
+          owner: { name: 'Alice', email: 'alice@x.com' },
+        },
+      ]);
+      expect(result.nextCursor).toBeNull();
+      expect(prismaMock.$queryRaw).toHaveBeenCalled();
+    });
+
+    it("preserves the raw query's ordering (not Prisma findMany's arbitrary id-in ordering)", async () => {
+      const service = await buildService();
+      prismaMock.$queryRaw.mockResolvedValue([{ id: 'f2' }, { id: 'f1' }]);
+      // findMany intentionally returns them in the OPPOSITE order to prove
+      // the service re-sorts by the raw query's id order, not findMany's own.
+      prismaMock.file.findMany.mockResolvedValue([
+        { id: 'f1', name: 'A', thumbnailUrl: null, thumbnailUrlDark: null, updatedAt: new Date('2026-01-01') },
+        { id: 'f2', name: 'B', thumbnailUrl: null, thumbnailUrlDark: null, updatedAt: new Date('2026-01-02') },
+      ]);
+      prismaMock.share.findMany.mockResolvedValue([]);
+      prismaMock.star.findMany.mockResolvedValue([]);
+
+      const result = await service.search('user_1', 'x');
+
+      expect(result.items.map((i) => i.id)).toEqual(['f2', 'f1']);
+    });
+
+    it('sets nextCursor (an offset-encoded string) when more rows exist beyond take', async () => {
+      const service = await buildService();
+      prismaMock.$queryRaw.mockResolvedValue([{ id: 'f1' }, { id: 'f2' }]);
+      prismaMock.file.findMany.mockResolvedValue([
+        { id: 'f1', name: 'A', thumbnailUrl: null, thumbnailUrlDark: null, updatedAt: new Date('2026-01-02') },
+      ]);
+      prismaMock.share.findMany.mockResolvedValue([]);
+      prismaMock.star.findMany.mockResolvedValue([]);
+
+      const result = await service.search('user_1', 'x', undefined, 1);
+
+      expect(result.items).toHaveLength(1);
+      expect(result.nextCursor).toBe('1');
+    });
+
+    it('returns an empty page without querying file/share tables when the raw query returns nothing', async () => {
+      const service = await buildService();
+      prismaMock.$queryRaw.mockResolvedValue([]);
+
+      const result = await service.search('user_1', 'nomatch');
+
+      expect(result).toEqual({ items: [], nextCursor: null });
+      expect(prismaMock.file.findMany).not.toHaveBeenCalled();
     });
   });
 });
