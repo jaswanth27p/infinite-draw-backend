@@ -6,8 +6,10 @@ import { FilesService } from './files.service';
 
 describe('FileVersionsService', () => {
   const prismaMock = {
-    fileVersion: { create: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() },
-    file: { update: jest.fn() },
+    fileVersion: { create: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), deleteMany: jest.fn() },
+    file: { update: jest.fn(), findUnique: jest.fn() },
+    $queryRaw: jest.fn(),
+    $transaction: jest.fn(),
   };
 
   const filesServiceMock = { notifyThumbnailUpdated: jest.fn() };
@@ -132,5 +134,114 @@ describe('FileVersionsService', () => {
     await service.restore(file as never, 'v1');
 
     expect(filesServiceMock.notifyThumbnailUpdated).not.toHaveBeenCalled();
+  });
+
+  describe('sweepIdleFiles', () => {
+    beforeEach(() => {
+      prismaMock.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(prismaMock));
+    });
+
+    it('creates an AUTO version for each file the query returns, and prunes retention for each', async () => {
+      const service = await buildService();
+      prismaMock.$queryRaw.mockResolvedValue([{ id: 'f1' }, { id: 'f2' }]);
+      prismaMock.file.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
+        Promise.resolve({ id: where.id, currentData: { elements: [] }, thumbnailUrl: `thumb-${where.id}.png` }),
+      );
+      prismaMock.fileVersion.create.mockResolvedValue({ id: 'v-new' });
+      prismaMock.fileVersion.findMany.mockResolvedValue([{ id: 'v-new' }]);
+
+      await service.sweepIdleFiles(5 * 60_000);
+
+      expect(prismaMock.fileVersion.create).toHaveBeenCalledTimes(2);
+      expect(prismaMock.fileVersion.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ fileId: 'f1', origin: 'AUTO', thumbnailUrl: 'thumb-f1.png' }),
+      });
+      expect(prismaMock.fileVersion.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ fileId: 'f2', origin: 'AUTO', thumbnailUrl: 'thumb-f2.png' }),
+      });
+    });
+
+    it("names the auto-created version starting with 'Auto-saved'", async () => {
+      const service = await buildService();
+      prismaMock.$queryRaw.mockResolvedValue([{ id: 'f1' }]);
+      prismaMock.file.findUnique.mockResolvedValue({ id: 'f1', currentData: {}, thumbnailUrl: null });
+      prismaMock.fileVersion.create.mockResolvedValue({ id: 'v1' });
+      prismaMock.fileVersion.findMany.mockResolvedValue([{ id: 'v1' }]);
+
+      await service.sweepIdleFiles(5 * 60_000);
+
+      const call = prismaMock.fileVersion.create.mock.calls[0][0];
+      expect(call.data.name).toMatch(/^Auto-saved —/);
+    });
+
+    it('prunes AUTO versions past the retention cap, oldest first, leaving exactly 20', async () => {
+      const service = await buildService();
+      prismaMock.$queryRaw.mockResolvedValue([{ id: 'f1' }]);
+      prismaMock.file.findUnique.mockResolvedValue({ id: 'f1', currentData: {}, thumbnailUrl: null });
+      prismaMock.fileVersion.create.mockResolvedValue({ id: 'v-new' });
+      const existing = Array.from({ length: 20 }, (_, i) => ({ id: `v-old-${i}` }));
+      prismaMock.fileVersion.findMany.mockResolvedValue([{ id: 'v-new' }, ...existing]);
+
+      await service.sweepIdleFiles(5 * 60_000);
+
+      expect(prismaMock.fileVersion.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: ['v-old-19'] } },
+      });
+    });
+
+    it('does not prune when at or under the retention cap', async () => {
+      const service = await buildService();
+      prismaMock.$queryRaw.mockResolvedValue([{ id: 'f1' }]);
+      prismaMock.file.findUnique.mockResolvedValue({ id: 'f1', currentData: {}, thumbnailUrl: null });
+      prismaMock.fileVersion.create.mockResolvedValue({ id: 'v-new' });
+      const existing = Array.from({ length: 19 }, (_, i) => ({ id: `v-old-${i}` }));
+      prismaMock.fileVersion.findMany.mockResolvedValue([{ id: 'v-new' }, ...existing]);
+
+      await service.sweepIdleFiles(5 * 60_000);
+
+      expect(prismaMock.fileVersion.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('only ever queries/prunes AUTO-origin versions, never MANUAL', async () => {
+      const service = await buildService();
+      prismaMock.$queryRaw.mockResolvedValue([{ id: 'f1' }]);
+      prismaMock.file.findUnique.mockResolvedValue({ id: 'f1', currentData: {}, thumbnailUrl: null });
+      prismaMock.fileVersion.create.mockResolvedValue({ id: 'v-new' });
+      prismaMock.fileVersion.findMany.mockResolvedValue([{ id: 'v-new' }]);
+
+      await service.sweepIdleFiles(5 * 60_000);
+
+      expect(prismaMock.fileVersion.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { fileId: 'f1', origin: 'AUTO' } }),
+      );
+    });
+
+    it('continues sweeping remaining files when one file fails (isolated per-file failure)', async () => {
+      const service = await buildService();
+      prismaMock.$queryRaw.mockResolvedValue([{ id: 'f1' }, { id: 'f2' }]);
+      prismaMock.file.findUnique.mockImplementation(({ where }: { where: { id: string } }) => {
+        if (where.id === 'f1') return Promise.reject(new Error('boom'));
+        return Promise.resolve({ id: 'f2', currentData: {}, thumbnailUrl: null });
+      });
+      prismaMock.fileVersion.create.mockResolvedValue({ id: 'v-new' });
+      prismaMock.fileVersion.findMany.mockResolvedValue([{ id: 'v-new' }]);
+
+      await expect(service.sweepIdleFiles(5 * 60_000)).resolves.toBeUndefined();
+
+      expect(prismaMock.fileVersion.create).toHaveBeenCalledTimes(1);
+      expect(prismaMock.fileVersion.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ fileId: 'f2' }),
+      });
+    });
+
+    it('skips a file that no longer exists by the time the transaction runs (race with a real delete)', async () => {
+      const service = await buildService();
+      prismaMock.$queryRaw.mockResolvedValue([{ id: 'f1' }]);
+      prismaMock.file.findUnique.mockResolvedValue(null);
+
+      await service.sweepIdleFiles(5 * 60_000);
+
+      expect(prismaMock.fileVersion.create).not.toHaveBeenCalled();
+    });
   });
 });
