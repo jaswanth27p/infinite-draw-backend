@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Headers, Post, Req } from '@nestjs/common';
+import { BadRequestException, Controller, Headers, Logger, Post, Req } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 import { Webhook, WebhookVerificationError } from 'svix';
@@ -6,6 +6,8 @@ import { ClerkWebhookService } from './clerk-webhook.service';
 
 @Controller('webhooks/clerk')
 export class ClerkWebhookController {
+  private readonly logger = new Logger(ClerkWebhookController.name);
+
   constructor(private readonly service: ClerkWebhookService) {}
 
   @Post()
@@ -15,6 +17,9 @@ export class ClerkWebhookController {
     @Headers('svix-timestamp') svixTimestamp: string,
     @Headers('svix-signature') svixSignature: string,
   ) {
+    this.logger.log(
+      `Received webhook: hasRawBody=${!!req.rawBody} svixId=${svixId ?? 'MISSING'}`,
+    );
     if (!req.rawBody) {
       throw new BadRequestException('Missing raw body');
     }
@@ -29,12 +34,15 @@ export class ClerkWebhookController {
       }) as { type: string; data: Record<string, unknown> };
     } catch (err) {
       if (err instanceof WebhookVerificationError) {
+        this.logger.warn(`Signature verification failed: ${(err as Error).message}`);
         throw new BadRequestException('Invalid webhook signature');
       }
       throw err;
     }
 
+    this.logger.log(`Verified webhook event: ${event.type}`);
     await this.service.handleEvent(event);
+    this.logger.log(`Handled webhook event: ${event.type}`);
     return { received: true };
   }
 }
