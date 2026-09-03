@@ -33,7 +33,7 @@ describe('FileVersionsService', () => {
     await service.save(file as never, 'Before redesign');
 
     expect(prismaMock.fileVersion.create).toHaveBeenCalledWith({
-      data: { fileId: 'f1', name: 'Before redesign', data: { elements: [] }, thumbnailUrl: 'old-thumb.png' },
+      data: { fileId: 'f1', name: 'Before redesign', data: { elements: [] }, thumbnailUrl: 'old-thumb.png', origin: 'MANUAL' },
     });
     expect(prismaMock.file.update).not.toHaveBeenCalled();
   });
@@ -46,7 +46,7 @@ describe('FileVersionsService', () => {
     await service.save(file as never, 'Before redesign', 'new-thumb.png');
 
     expect(prismaMock.fileVersion.create).toHaveBeenCalledWith({
-      data: { fileId: 'f1', name: 'Before redesign', data: { elements: [] }, thumbnailUrl: 'new-thumb.png' },
+      data: { fileId: 'f1', name: 'Before redesign', data: { elements: [] }, thumbnailUrl: 'new-thumb.png', origin: 'MANUAL' },
     });
     expect(prismaMock.file.update).toHaveBeenCalledWith({
       where: { id: 'f1' },
@@ -75,7 +75,7 @@ describe('FileVersionsService', () => {
     expect(prismaMock.fileVersion.findMany).toHaveBeenCalledWith({
       where: { fileId: 'f1' },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, thumbnailUrl: true, createdAt: true },
+      select: { id: true, name: true, thumbnailUrl: true, origin: true, createdAt: true },
     });
   });
 

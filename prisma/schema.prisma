@@ -25,6 +25,11 @@ enum NotificationType {
   GENERAL_ACCESS_CHANGED
 }
 
+enum FileVersionOrigin {
+  MANUAL
+  AUTO
+}
+
 model User {
   id        String   @id @default(cuid())
   clerkId   String   @unique
@@ -70,13 +75,14 @@ model File {
 }
 
 model FileVersion {
-  id           String   @id @default(cuid())
+  id           String            @id @default(cuid())
   fileId       String
-  file         File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  file         File              @relation(fields: [fileId], references: [id], onDelete: Cascade)
   name         String
   data         Json
   thumbnailUrl String?
-  createdAt    DateTime @default(now())
+  origin       FileVersionOrigin @default(MANUAL)
+  createdAt    DateTime          @default(now())
 
   @@index([fileId, createdAt])
 }

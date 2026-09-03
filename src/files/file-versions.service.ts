@@ -17,6 +17,7 @@ export class FileVersionsService {
         name,
         data: file.currentData as object,
         thumbnailUrl: thumbnailUrl ?? file.thumbnailUrl,
+        origin: 'MANUAL',
       },
     });
 
@@ -35,7 +36,7 @@ export class FileVersionsService {
     return this.prisma.fileVersion.findMany({
       where: { fileId },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, name: true, thumbnailUrl: true, createdAt: true },
+      select: { id: true, name: true, thumbnailUrl: true, origin: true, createdAt: true },
     });
   }
 
