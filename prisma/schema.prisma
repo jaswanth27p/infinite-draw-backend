@@ -23,6 +23,7 @@ enum NotificationType {
   ROLE_CHANGED
   ACCESS_REMOVED
   GENERAL_ACCESS_CHANGED
+  MENTIONED
 }
 
 enum FileVersionOrigin {
@@ -40,6 +41,7 @@ model User {
   notifyRoleChanged          Boolean @default(true)
   notifyAccessRemoved        Boolean @default(true)
   notifyGeneralAccessChanged Boolean @default(true)
+  notifyMentioned            Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   files     File[]
@@ -141,6 +143,7 @@ model Message {
   authorId  String
   author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   body      String
+  mentionedUserIds String[] @default([])
   createdAt DateTime @default(now())
 
   @@index([fileId, createdAt])
