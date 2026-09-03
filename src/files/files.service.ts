@@ -38,9 +38,9 @@ export class FilesService {
     return files.map((f) => ({ ...f, starred: starredIds.has(f.id) }));
   }
 
-  async list(ownerId: string, cursor?: string, take = 30) {
+  async list(ownerId: string, cursor?: string, take = 30, q?: string) {
     const rows = await this.prisma.file.findMany({
-      where: { ownerId, deletedAt: null },
+      where: { ownerId, deletedAt: null, ...(q ? { name: { contains: q, mode: 'insensitive' as const } } : {}) },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       take: take + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -231,7 +231,7 @@ export class FilesService {
   // grant that justified it (e.g. after SharesService#remove, or after an
   // owner flips generalAccess back to RESTRICTED), and the ex-collaborator
   // keeps seeing the file's name/thumbnail on this list indefinitely.
-  async listStarred(userId: string, cursor?: string, take = 30) {
+  async listStarred(userId: string, cursor?: string, take = 30, q?: string) {
     const rows = await this.prisma.star.findMany({
       where: {
         userId,
@@ -242,6 +242,7 @@ export class FilesService {
             { shares: { some: { userId } } },
             { generalAccess: GeneralAccess.ANYONE, generalAccessRole: { not: null } },
           ],
+          ...(q ? { name: { contains: q, mode: 'insensitive' as const } } : {}),
         },
       },
       select: { id: true, file: { select: FILE_LIST_SELECT } },
@@ -255,9 +256,9 @@ export class FilesService {
     return { items, nextCursor: hasMore ? page[page.length - 1].id : null };
   }
 
-  async listTrash(ownerId: string, cursor?: string, take = 30) {
+  async listTrash(ownerId: string, cursor?: string, take = 30, q?: string) {
     const rows = await this.prisma.file.findMany({
-      where: { ownerId, deletedAt: { not: null } },
+      where: { ownerId, deletedAt: { not: null }, ...(q ? { name: { contains: q, mode: 'insensitive' as const } } : {}) },
       orderBy: [{ deletedAt: 'desc' }, { id: 'desc' }],
       take: take + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),

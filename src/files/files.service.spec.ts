@@ -768,4 +768,103 @@ describe('FilesService', () => {
       });
     });
   });
+
+  describe('search filtering (q)', () => {
+    it('list filters by name substring, case-insensitively, when q is provided', async () => {
+      const service = await buildService();
+      prismaMock.file.findMany.mockResolvedValue([]);
+      prismaMock.star.findMany.mockResolvedValue([]);
+
+      await service.list('owner_1', undefined, 30, 'roadmap');
+
+      expect(prismaMock.file.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ownerId: 'owner_1', deletedAt: null, name: { contains: 'roadmap', mode: 'insensitive' } },
+        }),
+      );
+    });
+
+    it('list omits the name filter entirely when q is not provided (existing behavior unchanged)', async () => {
+      const service = await buildService();
+      prismaMock.file.findMany.mockResolvedValue([]);
+      prismaMock.star.findMany.mockResolvedValue([]);
+
+      await service.list('owner_1');
+
+      expect(prismaMock.file.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { ownerId: 'owner_1', deletedAt: null } }),
+      );
+    });
+
+    it('listStarred filters by name substring, case-insensitively, when q is provided', async () => {
+      const service = await buildService();
+      prismaMock.star.findMany.mockResolvedValue([]);
+
+      await service.listStarred('user_1', undefined, 30, 'roadmap');
+
+      expect(prismaMock.star.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            userId: 'user_1',
+            file: {
+              deletedAt: null,
+              OR: [
+                { ownerId: 'user_1' },
+                { shares: { some: { userId: 'user_1' } } },
+                { generalAccess: 'ANYONE', generalAccessRole: { not: null } },
+              ],
+              name: { contains: 'roadmap', mode: 'insensitive' },
+            },
+          },
+        }),
+      );
+    });
+
+    it('listStarred omits the name filter entirely when q is not provided', async () => {
+      const service = await buildService();
+      prismaMock.star.findMany.mockResolvedValue([]);
+
+      await service.listStarred('user_1');
+
+      expect(prismaMock.star.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            userId: 'user_1',
+            file: {
+              deletedAt: null,
+              OR: [
+                { ownerId: 'user_1' },
+                { shares: { some: { userId: 'user_1' } } },
+                { generalAccess: 'ANYONE', generalAccessRole: { not: null } },
+              ],
+            },
+          },
+        }),
+      );
+    });
+
+    it('listTrash filters by name substring, case-insensitively, when q is provided', async () => {
+      const service = await buildService();
+      prismaMock.file.findMany.mockResolvedValue([]);
+
+      await service.listTrash('owner_1', undefined, 30, 'roadmap');
+
+      expect(prismaMock.file.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { ownerId: 'owner_1', deletedAt: { not: null }, name: { contains: 'roadmap', mode: 'insensitive' } },
+        }),
+      );
+    });
+
+    it('listTrash omits the name filter entirely when q is not provided', async () => {
+      const service = await buildService();
+      prismaMock.file.findMany.mockResolvedValue([]);
+
+      await service.listTrash('owner_1');
+
+      expect(prismaMock.file.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { ownerId: 'owner_1', deletedAt: { not: null } } }),
+      );
+    });
+  });
 });

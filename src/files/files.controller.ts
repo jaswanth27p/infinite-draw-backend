@@ -41,8 +41,9 @@ export class FilesController {
     @CurrentLocalUserId() ownerId: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
+    @Query('q') q?: string,
   ) {
-    return this.filesService.list(ownerId, cursor, clampLimit(limit, 30));
+    return this.filesService.list(ownerId, cursor, clampLimit(limit, 30), q);
   }
 
   @Post()
@@ -67,8 +68,9 @@ export class FilesController {
     @CurrentLocalUserId() userId: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
+    @Query('q') q?: string,
   ) {
-    return this.filesService.listStarred(userId, cursor, clampLimit(limit, 30));
+    return this.filesService.listStarred(userId, cursor, clampLimit(limit, 30), q);
   }
 
   @Get('trash')
@@ -77,8 +79,9 @@ export class FilesController {
     @CurrentLocalUserId() userId: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
+    @Query('q') q?: string,
   ) {
-    return this.filesService.listTrash(userId, cursor, clampLimit(limit, 30));
+    return this.filesService.listTrash(userId, cursor, clampLimit(limit, 30), q);
   }
 
   @Get(':id')
