@@ -912,6 +912,24 @@ describe('FilesService', () => {
   });
 
   describe('search', () => {
+    it('treats a non-numeric cursor as offset 0 instead of passing NaN to the raw query', async () => {
+      // Postgres throws "invalid input syntax for type integer: NaN" for a
+      // NaN OFFSET parameter -- confirmed directly against a live
+      // instance. A garbage/corrupted cursor must not 500 the request.
+      const service = await buildService();
+      prismaMock.$queryRaw.mockResolvedValue([]);
+
+      await service.search('user_1', 'x', 'not-a-number', 30);
+
+      const sqlCall = prismaMock.$queryRaw.mock.calls[0];
+      // Prisma.sql tagged-template calls pass an array of interpolated
+      // values as additional arguments after the strings array — assert
+      // none of them is NaN, matching how this repo's other $queryRaw
+      // tests (shares.service.spec.ts) just confirm the call happened
+      // rather than parsing the tagged-template internals.
+      expect(sqlCall.some((v: unknown) => typeof v === 'number' && Number.isNaN(v))).toBe(false);
+    });
+
     it('returns owned files without a role/owner, and shared files with role+owner attached', async () => {
       const service = await buildService();
       prismaMock.$queryRaw.mockResolvedValue([{ id: 'f1' }, { id: 'f2' }]);

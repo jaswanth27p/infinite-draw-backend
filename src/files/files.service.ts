@@ -211,7 +211,12 @@ export class FilesService {
   // contract, so the frontend's shared pagination hook needs no special
   // case for this one route.
   async search(userId: string, q: string, cursor?: string, take = 30) {
-    const offset = cursor ? Number(cursor) : 0;
+    // A non-numeric/negative cursor must not reach the raw query below as
+    // NaN -- Postgres throws "invalid input syntax for type integer" for a
+    // NaN OFFSET parameter (confirmed directly against a live instance),
+    // which would 500 the request instead of degrading to page one.
+    const parsedOffset = cursor ? Number(cursor) : 0;
+    const offset = Number.isInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
     const pattern = `%${q}%`;
     const idRows = await this.prisma.$queryRaw<{ id: string }[]>`
       SELECT id FROM (
