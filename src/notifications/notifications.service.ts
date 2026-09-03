@@ -5,12 +5,17 @@ import { NotificationsGateway, notificationRoom } from './notifications.gateway'
 
 const PREFERENCE_COLUMN_BY_TYPE: Record<
   NotificationType,
-  'notifyFileShared' | 'notifyRoleChanged' | 'notifyAccessRemoved' | 'notifyGeneralAccessChanged'
+  | 'notifyFileShared'
+  | 'notifyRoleChanged'
+  | 'notifyAccessRemoved'
+  | 'notifyGeneralAccessChanged'
+  | 'notifyMentioned'
 > = {
   FILE_SHARED: 'notifyFileShared',
   ROLE_CHANGED: 'notifyRoleChanged',
   ACCESS_REMOVED: 'notifyAccessRemoved',
   GENERAL_ACCESS_CHANGED: 'notifyGeneralAccessChanged',
+  MENTIONED: 'notifyMentioned',
 };
 
 export interface CreateNotificationInput {
@@ -68,6 +73,7 @@ export class NotificationsService {
         notifyRoleChanged: true,
         notifyAccessRemoved: true,
         notifyGeneralAccessChanged: true,
+        notifyMentioned: true,
       },
     });
     if (recipient && recipient[preferenceColumn] === false) {

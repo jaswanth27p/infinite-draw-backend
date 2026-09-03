@@ -209,6 +209,7 @@ describe('NotificationsService', () => {
           notifyRoleChanged: true,
           notifyAccessRemoved: true,
           notifyGeneralAccessChanged: true,
+          notifyMentioned: true,
         },
       });
       expect(prismaMock.notification.create).not.toHaveBeenCalled();
@@ -221,6 +222,7 @@ describe('NotificationsService', () => {
         notifyRoleChanged: true,
         notifyAccessRemoved: true,
         notifyGeneralAccessChanged: true,
+        notifyMentioned: true,
       });
       prismaMock.notification.create.mockResolvedValue(row);
       const service = buildService();
@@ -233,6 +235,20 @@ describe('NotificationsService', () => {
       });
 
       expect(prismaMock.notification.create).toHaveBeenCalled();
+    });
+
+    it('skips creating a MENTIONED notification when the recipient disabled it', async () => {
+      prismaMock.user.findUnique.mockResolvedValue({ notifyMentioned: false });
+      const service = buildService();
+
+      await service.create({
+        recipientId: 'user_2',
+        actorId: 'user_1',
+        type: 'MENTIONED' as never,
+        file: { id: 'f1', name: 'Q3 Roadmap' },
+      });
+
+      expect(prismaMock.notification.create).not.toHaveBeenCalled();
     });
   });
 

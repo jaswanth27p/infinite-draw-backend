@@ -15,13 +15,14 @@ describe('UsersService', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it("getNotificationPreferences returns the caller's four preference columns", async () => {
+  it("getNotificationPreferences returns the caller's five preference columns", async () => {
     const service = buildService();
     prismaMock.user.findUniqueOrThrow.mockResolvedValue({
       notifyFileShared: true,
       notifyRoleChanged: false,
       notifyAccessRemoved: true,
       notifyGeneralAccessChanged: true,
+      notifyMentioned: true,
     });
 
     const result = await service.getNotificationPreferences('user_1');
@@ -31,6 +32,7 @@ describe('UsersService', () => {
       notifyRoleChanged: false,
       notifyAccessRemoved: true,
       notifyGeneralAccessChanged: true,
+      notifyMentioned: true,
     });
     expect(prismaMock.user.findUniqueOrThrow).toHaveBeenCalledWith({
       where: { id: 'user_1' },
@@ -39,6 +41,7 @@ describe('UsersService', () => {
         notifyRoleChanged: true,
         notifyAccessRemoved: true,
         notifyGeneralAccessChanged: true,
+        notifyMentioned: true,
       },
     });
   });
@@ -50,6 +53,7 @@ describe('UsersService', () => {
       notifyRoleChanged: true,
       notifyAccessRemoved: true,
       notifyGeneralAccessChanged: true,
+      notifyMentioned: true,
     });
 
     await service.updateNotificationPreferences('user_1', {
@@ -65,7 +69,21 @@ describe('UsersService', () => {
         notifyRoleChanged: true,
         notifyAccessRemoved: true,
         notifyGeneralAccessChanged: true,
+        notifyMentioned: true,
       },
+    });
+  });
+
+  it('updateNotificationPreferences forwards notifyMentioned when present', async () => {
+    const service = buildService();
+    prismaMock.user.update.mockResolvedValue({ notifyMentioned: false });
+
+    await service.updateNotificationPreferences('user_1', { notifyMentioned: false });
+
+    expect(prismaMock.user.update).toHaveBeenCalledWith({
+      where: { id: 'user_1' },
+      data: { notifyMentioned: false },
+      select: expect.any(Object),
     });
   });
 
