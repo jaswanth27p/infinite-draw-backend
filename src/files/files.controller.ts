@@ -117,7 +117,13 @@ export class FilesController {
   @UseGuards(FileAccessGuard)
   @RequireRole('VIEWER')
   async get(@CurrentFileAccess() access: FileAccess) {
-    const owner = await this.filesService.getOwnerInfo(access.file.ownerId);
+    // A VIEWER can never send chat messages (send-chat-message requires
+    // COMMENTER+, see CollabGateway#hasFloor) and is the role every
+    // anonymous request resolves to for a generalAccess: ANYONE file
+    // (FilesService#getAccess) -- so a VIEWER has no legitimate use for
+    // owner info, and including it here would leak the owner's email to
+    // any unauthenticated visitor with a public file link.
+    const owner = access.role === 'VIEWER' ? null : await this.filesService.getOwnerInfo(access.file.ownerId);
     return { ...access.file, role: access.role, owner };
   }
 

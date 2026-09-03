@@ -99,12 +99,32 @@ describe('FilesController#get', () => {
     return new FilesController(filesServiceMock as unknown as FilesService);
   }
 
-  it('get succeeds anonymously for a file with generalAccess ANYONE, always as VIEWER', async () => {
+  it('get succeeds anonymously for a file with generalAccess ANYONE, always as VIEWER, and never fetches/leaks owner info to a VIEWER', async () => {
     // Build the controller directly (guards are unit-tested separately;
     // this exercises FilesController#get's own logic against a
     // CurrentFileAccess value FileAccessGuard would have attached).
+    // A VIEWER can never send chat messages (COMMENTER+ required), and
+    // every anonymous request resolves to VIEWER -- so owner info (which
+    // includes the owner's email) must never be fetched or returned here,
+    // or an anonymous visitor with a public file link could read it.
     const controller = buildController();
     const access = { file: { id: 'f1', name: 'Doc', ownerId: 'owner_1' }, role: 'VIEWER' as const };
+
+    const result = await controller.get(access as never);
+
+    expect(filesServiceMock.getOwnerInfo).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      id: 'f1',
+      name: 'Doc',
+      ownerId: 'owner_1',
+      role: 'VIEWER',
+      owner: null,
+    });
+  });
+
+  it('get includes owner info for a COMMENTER+ role (who can actually mention the owner in chat)', async () => {
+    const controller = buildController();
+    const access = { file: { id: 'f1', name: 'Doc', ownerId: 'owner_1' }, role: 'EDITOR' as const };
     filesServiceMock.getOwnerInfo.mockResolvedValue({ id: 'owner_1', name: 'Alice', email: 'alice@x.com' });
 
     const result = await controller.get(access as never);
@@ -114,7 +134,7 @@ describe('FilesController#get', () => {
       id: 'f1',
       name: 'Doc',
       ownerId: 'owner_1',
-      role: 'VIEWER',
+      role: 'EDITOR',
       owner: { id: 'owner_1', name: 'Alice', email: 'alice@x.com' },
     });
   });
