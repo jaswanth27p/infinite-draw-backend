@@ -1,7 +1,8 @@
-export type Role = 'VIEWER' | 'EDITOR' | 'OWNER';
+export type Role = 'VIEWER' | 'COMMENTER' | 'EDITOR' | 'OWNER';
 
 export const ROLE_RANK: Record<Role, number> = {
   VIEWER: 0,
-  EDITOR: 1,
-  OWNER: 2,
+  COMMENTER: 1,
+  EDITOR: 2,
+  OWNER: 3,
 };

@@ -12,7 +12,7 @@ export class ChatController {
 
   @Get()
   @UseGuards(FileAccessGuard)
-  @RequireRole('VIEWER')
+  @RequireRole('COMMENTER')
   async list(
     @Param('fileId') fileId: string,
     @Query('cursor') cursor?: string,

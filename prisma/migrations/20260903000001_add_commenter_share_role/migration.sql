@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "ShareRole" ADD VALUE 'COMMENTER';

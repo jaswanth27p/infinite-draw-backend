@@ -46,7 +46,7 @@ describe.each([
   [FileVersionsController, 'list', 'VIEWER'],
   [FileVersionsController, 'restore', 'EDITOR'],
   [StorageController, 'presign', 'EDITOR'],
-  [ChatController, 'list', 'VIEWER'],
+  [ChatController, 'list', 'COMMENTER'],
 ] as const)('file-access floor on %s#%s', (Controller, methodName, expectedRole) => {
   it(`requires FileAccessGuard and RequireRole('${expectedRole}')`, () => {
     const handler = (Controller.prototype as Record<string, unknown>)[methodName];

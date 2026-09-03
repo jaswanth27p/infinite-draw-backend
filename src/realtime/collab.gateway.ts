@@ -249,7 +249,7 @@ export class CollabGateway implements OnGatewayConnection {
     if (!isValidFileId(body?.fileId)) {
       return;
     }
-    if (!(await this.hasFloor(client, body.fileId, 'VIEWER'))) {
+    if (!(await this.hasFloor(client, body.fileId, 'COMMENTER'))) {
       return;
     }
 

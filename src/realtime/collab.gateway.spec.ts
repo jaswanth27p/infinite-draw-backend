@@ -438,8 +438,8 @@ describe('CollabGateway', () => {
       createdAt: new Date('2026-08-18T00:00:00Z'),
     };
 
-    it('creates a message, broadcasts it to the rest of the room (sender excluded) at VIEWER floor, and returns it as the ack', async () => {
-      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+    it('creates a message, broadcasts it to the rest of the room (sender excluded) at COMMENTER floor, and returns it as the ack', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'COMMENTER', file: { id: 'f1' } });
       chatServiceMock.create.mockResolvedValue(message);
       gateway.server = createServerMock([]);
       const client = createClient();
@@ -454,6 +454,16 @@ describe('CollabGateway', () => {
       expect(client.emit).toHaveBeenCalledWith('chat-message', message);
       expect(gateway.server.to).not.toHaveBeenCalled();
       expect(result).toEqual(message);
+    });
+
+    it('handleSendChatMessage rejects a VIEWER (below COMMENTER floor)', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      gateway.server = createServerMock([]);
+      const client = createClient();
+
+      await gateway.handleSendChatMessage(client, { fileId: 'f1', body: 'hi' });
+
+      expect(chatServiceMock.create).not.toHaveBeenCalled();
     });
 
     it('silently drops when fileId is missing or not a non-empty string', async () => {
@@ -479,7 +489,7 @@ describe('CollabGateway', () => {
     });
 
     it('drops silently (no throw) when ChatService.create rejects validation', async () => {
-      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      filesServiceMock.getAccess.mockResolvedValue({ role: 'COMMENTER', file: { id: 'f1' } });
       chatServiceMock.create.mockRejectedValue(new Error('Message body must not be empty'));
       gateway.server = createServerMock([]);
       const client = createClient();
