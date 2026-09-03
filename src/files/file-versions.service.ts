@@ -99,7 +99,7 @@ export class FileVersionsService {
       const file = await tx.file.findUnique({ where: { id: fileId } });
       if (!file) return;
 
-      const name = `Auto-saved — ${new Date().toLocaleString()}`;
+      const name = 'Auto-saved';
       await tx.fileVersion.create({
         data: {
           fileId: file.id,

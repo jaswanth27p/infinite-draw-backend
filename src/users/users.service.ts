@@ -7,7 +7,6 @@ const NOTIFICATION_PREFERENCE_SELECT = {
   notifyFileShared: true,
   notifyRoleChanged: true,
   notifyAccessRemoved: true,
-  notifyGeneralAccessChanged: true,
   notifyMentioned: true,
 } as const;
 
@@ -27,13 +26,11 @@ export class UsersService {
   // convention — defense in depth even with the global whitelisting
   // ValidationPipe already stripping unknown keys.
   updateNotificationPreferences(userId: string, dto: UpdateNotificationPreferencesDto) {
-    const { notifyFileShared, notifyRoleChanged, notifyAccessRemoved, notifyGeneralAccessChanged, notifyMentioned } =
-      dto;
+    const { notifyFileShared, notifyRoleChanged, notifyAccessRemoved, notifyMentioned } = dto;
     const data: Prisma.UserUpdateInput = {};
     if (notifyFileShared !== undefined) data.notifyFileShared = notifyFileShared;
     if (notifyRoleChanged !== undefined) data.notifyRoleChanged = notifyRoleChanged;
     if (notifyAccessRemoved !== undefined) data.notifyAccessRemoved = notifyAccessRemoved;
-    if (notifyGeneralAccessChanged !== undefined) data.notifyGeneralAccessChanged = notifyGeneralAccessChanged;
     if (notifyMentioned !== undefined) data.notifyMentioned = notifyMentioned;
     return this.prisma.user.update({
       where: { id: userId },

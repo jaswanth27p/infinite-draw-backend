@@ -284,12 +284,6 @@ export class FilesService {
         generalAccessRole: dto.generalAccess === GeneralAccess.ANYONE ? dto.generalAccessRole! : null,
       },
     });
-    await this.notificationsService.create({
-      recipientId: file.ownerId,
-      actorId: file.ownerId,
-      type: 'GENERAL_ACCESS_CHANGED',
-      file: { id: file.id, name: file.name },
-    });
     return file;
   }
 

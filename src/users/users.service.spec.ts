@@ -15,13 +15,12 @@ describe('UsersService', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it("getNotificationPreferences returns the caller's five preference columns", async () => {
+  it("getNotificationPreferences returns the caller's four preference columns", async () => {
     const service = buildService();
     prismaMock.user.findUniqueOrThrow.mockResolvedValue({
       notifyFileShared: true,
       notifyRoleChanged: false,
       notifyAccessRemoved: true,
-      notifyGeneralAccessChanged: true,
       notifyMentioned: true,
     });
 
@@ -31,7 +30,6 @@ describe('UsersService', () => {
       notifyFileShared: true,
       notifyRoleChanged: false,
       notifyAccessRemoved: true,
-      notifyGeneralAccessChanged: true,
       notifyMentioned: true,
     });
     expect(prismaMock.user.findUniqueOrThrow).toHaveBeenCalledWith({
@@ -40,7 +38,6 @@ describe('UsersService', () => {
         notifyFileShared: true,
         notifyRoleChanged: true,
         notifyAccessRemoved: true,
-        notifyGeneralAccessChanged: true,
         notifyMentioned: true,
       },
     });
@@ -52,7 +49,6 @@ describe('UsersService', () => {
       notifyFileShared: false,
       notifyRoleChanged: true,
       notifyAccessRemoved: true,
-      notifyGeneralAccessChanged: true,
       notifyMentioned: true,
     });
 
@@ -68,7 +64,6 @@ describe('UsersService', () => {
         notifyFileShared: true,
         notifyRoleChanged: true,
         notifyAccessRemoved: true,
-        notifyGeneralAccessChanged: true,
         notifyMentioned: true,
       },
     });

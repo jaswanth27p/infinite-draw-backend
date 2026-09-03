@@ -15,9 +15,5 @@ export class UpdateNotificationPreferencesDto {
 
   @IsOptional()
   @IsBoolean()
-  notifyGeneralAccessChanged?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
   notifyMentioned?: boolean;
 }

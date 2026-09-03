@@ -349,7 +349,7 @@ describe('FilesService', () => {
       expect(prismaMock.file.update).not.toHaveBeenCalled();
     });
 
-    it('creates a GENERAL_ACCESS_CHANGED notification for the owner', async () => {
+    it('does not create a notification for a general-access change', async () => {
       const service = await buildService();
       prismaMock.file.update.mockResolvedValue({
         id: 'f1',
@@ -361,12 +361,7 @@ describe('FilesService', () => {
 
       await service.updateGeneralAccess('f1', { generalAccess: 'ANYONE', generalAccessRole: 'VIEWER' } as never);
 
-      expect(notificationsServiceMock.create).toHaveBeenCalledWith({
-        recipientId: 'owner_1',
-        actorId: 'owner_1',
-        type: 'GENERAL_ACCESS_CHANGED',
-        file: { id: 'f1', name: 'Q3 Roadmap' },
-      });
+      expect(notificationsServiceMock.create).not.toHaveBeenCalled();
     });
   });
 
