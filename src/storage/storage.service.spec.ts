@@ -89,7 +89,7 @@ describe('StorageService', () => {
       expect(sendSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('sets a bucket policy granting anonymous read access scoped to thumbnails/* only, every time (idempotent)', async () => {
+    it('applyPublicReadPolicy grants public read on both thumbnails/* and images/*, every time (idempotent)', async () => {
       const sendSpy = jest
         .spyOn(S3Client.prototype, 'send')
         .mockImplementation((command: unknown) => {
@@ -121,8 +121,12 @@ describe('StorageService', () => {
         Effect: 'Allow',
         Principal: '*',
         Action: expect.arrayContaining(['s3:GetObject']),
-        Resource: ['arn:aws:s3:::infinite-draw-assets/thumbnails/*'],
+        Resource: expect.arrayContaining([
+          'arn:aws:s3:::infinite-draw-assets/thumbnails/*',
+          'arn:aws:s3:::infinite-draw-assets/images/*',
+        ]),
       });
+      expect(policy.Statement[0].Resource).toHaveLength(2);
     });
   });
 

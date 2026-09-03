@@ -53,17 +53,19 @@ export class StorageService implements OnModuleInit {
       }
       await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
     }
-    await this.applyThumbnailReadPolicy();
+    await this.applyPublicReadPolicy();
   }
 
   /**
-   * Scene JSON never lives in MinIO (Postgres only) — thumbnails are the
-   * only objects this app ever wants publicly readable, and only those
-   * under the `thumbnails/` prefix. This is declarative (a full policy
+   * Scene JSON never lives in MinIO (Postgres only) — thumbnails and
+   * canvas images are the only objects this app ever wants publicly
+   * readable, under the `thumbnails/` and `images/` prefixes respectively
+   * (both render via a plain `<img src>`/Excalidraw's own renderer, same
+   * requirement as thumbnails). This is declarative (a full policy
    * document, not an incremental grant), so applying it on every
    * `onModuleInit` is safe and idempotent.
    */
-  private async applyThumbnailReadPolicy(): Promise<void> {
+  private async applyPublicReadPolicy(): Promise<void> {
     const policy = {
       Version: '2012-10-17',
       Statement: [
@@ -71,7 +73,10 @@ export class StorageService implements OnModuleInit {
           Effect: 'Allow',
           Principal: '*',
           Action: ['s3:GetObject'],
-          Resource: [`arn:aws:s3:::${this.bucket}/thumbnails/*`],
+          Resource: [
+            `arn:aws:s3:::${this.bucket}/thumbnails/*`,
+            `arn:aws:s3:::${this.bucket}/images/*`,
+          ],
         },
       ],
     };
