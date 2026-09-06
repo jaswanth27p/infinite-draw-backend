@@ -9,10 +9,12 @@ function createClient(
     localUserId: 'local_1',
     displayName: 'Alice Owner',
   },
+  options: { id?: string; clientSessionId?: string } = {},
 ) {
   const client: any = {
-    id: 'socket_1',
+    id: options.id ?? 'socket_1',
     data,
+    handshake: { auth: { clientSessionId: options.clientSessionId } },
     join: jest.fn().mockResolvedValue(undefined),
     leave: jest.fn().mockResolvedValue(undefined),
     to: jest.fn().mockReturnThis(),
@@ -32,6 +34,7 @@ function createServerMock(socketIds: string[]) {
       fetchSockets: jest
         .fn()
         .mockResolvedValue(socketIds.map((id) => ({ id }))),
+      disconnectSockets: jest.fn(),
     }),
     to: jest.fn().mockReturnThis(),
     emit: jest.fn(),
@@ -129,6 +132,55 @@ describe('CollabGateway', () => {
 
       expect(client.leave).not.toHaveBeenCalled();
     });
+
+    it('evicts the previous socket for the same tab (clientSessionId) reconnecting to the same file', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({
+        role: 'VIEWER',
+        file: { id: 'f1' },
+      });
+      const server = createServerMock(['socket_1']);
+      gateway.server = server;
+      const first = createClient(undefined, {
+        id: 'socket_1',
+        clientSessionId: 'tab_1',
+      });
+      await gateway.handleJoinRoom(first, { fileId: 'f1' });
+
+      server.in.mockClear();
+      const second = createClient(undefined, {
+        id: 'socket_2',
+        clientSessionId: 'tab_1',
+      });
+      await gateway.handleJoinRoom(second, { fileId: 'f1' });
+
+      expect(server.in).toHaveBeenCalledWith('socket_1');
+      expect(server.in('socket_1').disconnectSockets).toHaveBeenCalledWith(
+        true,
+      );
+    });
+
+    it('does not evict anything for a different tab (clientSessionId) joining the same file', async () => {
+      filesServiceMock.getAccess.mockResolvedValue({
+        role: 'VIEWER',
+        file: { id: 'f1' },
+      });
+      const server = createServerMock(['socket_1']);
+      gateway.server = server;
+      const first = createClient(undefined, {
+        id: 'socket_1',
+        clientSessionId: 'tab_1',
+      });
+      await gateway.handleJoinRoom(first, { fileId: 'f1' });
+
+      server.in.mockClear();
+      const second = createClient(
+        { userId: 'clerk_2', localUserId: 'local_2', displayName: 'Bob' },
+        { id: 'socket_2', clientSessionId: 'tab_2' },
+      );
+      await gateway.handleJoinRoom(second, { fileId: 'f1' });
+
+      expect(server.in).not.toHaveBeenCalledWith('socket_1');
+    });
   });
 
   describe('handleConnection', () => {
@@ -174,7 +226,10 @@ describe('CollabGateway', () => {
     });
 
     it('removes a disconnecting socket from any file voice roster it was in and broadcasts voice-user-left', async () => {
-      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      filesServiceMock.getAccess.mockResolvedValue({
+        role: 'VIEWER',
+        file: { id: 'f1' },
+      });
       gateway.server = createServerMock(['socket_2']);
       const client = createClient();
       client.rooms = new Set(['socket_1', 'file:f1']);
@@ -187,7 +242,9 @@ describe('CollabGateway', () => {
       await disconnectingCallback();
 
       expect(client.to).toHaveBeenCalledWith('file:f1');
-      expect(client.emit).toHaveBeenCalledWith('voice-user-left', { socketId: 'socket_1' });
+      expect(client.emit).toHaveBeenCalledWith('voice-user-left', {
+        socketId: 'socket_1',
+      });
     });
 
     it('does not emit voice-user-left for a room the socket was in but never joined voice on', async () => {
@@ -199,7 +256,10 @@ describe('CollabGateway', () => {
       const disconnectingCallback = client.on.mock.calls[0][1];
       await disconnectingCallback();
 
-      expect(client.emit).not.toHaveBeenCalledWith('voice-user-left', expect.anything());
+      expect(client.emit).not.toHaveBeenCalledWith(
+        'voice-user-left',
+        expect.anything(),
+      );
     });
   });
 
@@ -439,14 +499,25 @@ describe('CollabGateway', () => {
     };
 
     it('creates a message, broadcasts it to the rest of the room (sender excluded) at COMMENTER floor, and returns it as the ack', async () => {
-      filesServiceMock.getAccess.mockResolvedValue({ role: 'COMMENTER', file: { id: 'f1' } });
+      filesServiceMock.getAccess.mockResolvedValue({
+        role: 'COMMENTER',
+        file: { id: 'f1' },
+      });
       chatServiceMock.create.mockResolvedValue(message);
       gateway.server = createServerMock([]);
       const client = createClient();
 
-      const result = await gateway.handleSendChatMessage(client, { fileId: 'f1', body: 'hello' });
+      const result = await gateway.handleSendChatMessage(client, {
+        fileId: 'f1',
+        body: 'hello',
+      });
 
-      expect(chatServiceMock.create).toHaveBeenCalledWith('f1', 'local_1', 'hello', []);
+      expect(chatServiceMock.create).toHaveBeenCalledWith(
+        'f1',
+        'local_1',
+        'hello',
+        [],
+      );
       // Sender excluded: `client.to(...)`, not `gateway.server.to(...)` —
       // the sender learns of their own message only via the returned ack,
       // so there's exactly one delivery path and nothing to race.
@@ -457,7 +528,10 @@ describe('CollabGateway', () => {
     });
 
     it('forwards mentionedUserIds through to ChatService.create when provided', async () => {
-      filesServiceMock.getAccess.mockResolvedValue({ role: 'COMMENTER', file: { id: 'f1' } });
+      filesServiceMock.getAccess.mockResolvedValue({
+        role: 'COMMENTER',
+        file: { id: 'f1' },
+      });
       chatServiceMock.create.mockResolvedValue(message);
       gateway.server = createServerMock([]);
       const client = createClient();
@@ -468,11 +542,19 @@ describe('CollabGateway', () => {
         mentionedUserIds: ['user_2'],
       });
 
-      expect(chatServiceMock.create).toHaveBeenCalledWith('f1', 'local_1', 'hello', ['user_2']);
+      expect(chatServiceMock.create).toHaveBeenCalledWith(
+        'f1',
+        'local_1',
+        'hello',
+        ['user_2'],
+      );
     });
 
     it('handleSendChatMessage rejects a VIEWER (below COMMENTER floor)', async () => {
-      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      filesServiceMock.getAccess.mockResolvedValue({
+        role: 'VIEWER',
+        file: { id: 'f1' },
+      });
       gateway.server = createServerMock([]);
       const client = createClient();
 
@@ -485,7 +567,10 @@ describe('CollabGateway', () => {
       gateway.server = createServerMock([]);
       const client = createClient();
 
-      await gateway.handleSendChatMessage(client, { fileId: '', body: 'hi' } as any);
+      await gateway.handleSendChatMessage(client, {
+        fileId: '',
+        body: 'hi',
+      });
 
       expect(filesServiceMock.getAccess).not.toHaveBeenCalled();
       expect(chatServiceMock.create).not.toHaveBeenCalled();
@@ -504,12 +589,20 @@ describe('CollabGateway', () => {
     });
 
     it('drops silently (no throw) when ChatService.create rejects validation', async () => {
-      filesServiceMock.getAccess.mockResolvedValue({ role: 'COMMENTER', file: { id: 'f1' } });
-      chatServiceMock.create.mockRejectedValue(new Error('Message body must not be empty'));
+      filesServiceMock.getAccess.mockResolvedValue({
+        role: 'COMMENTER',
+        file: { id: 'f1' },
+      });
+      chatServiceMock.create.mockRejectedValue(
+        new Error('Message body must not be empty'),
+      );
       gateway.server = createServerMock([]);
       const client = createClient();
 
-      const result = await gateway.handleSendChatMessage(client, { fileId: 'f1', body: '   ' });
+      const result = await gateway.handleSendChatMessage(client, {
+        fileId: 'f1',
+        body: '   ',
+      });
 
       expect(result).toBeUndefined();
       expect(gateway.server.emit).not.toHaveBeenCalled();
@@ -518,8 +611,15 @@ describe('CollabGateway', () => {
 
   describe('join-voice / leave-voice', () => {
     it('adds the caller to the file voice roster, broadcasts voice-user-joined (excluding sender), and returns the roster as it was before joining', async () => {
-      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
-      const other = createClient({ userId: 'clerk_2', localUserId: 'local_2', displayName: 'Bob' });
+      filesServiceMock.getAccess.mockResolvedValue({
+        role: 'VIEWER',
+        file: { id: 'f1' },
+      });
+      const other = createClient({
+        userId: 'clerk_2',
+        localUserId: 'local_2',
+        displayName: 'Bob',
+      });
       other.id = 'socket_2';
       await gateway.handleJoinVoice(other, { fileId: 'f1' });
       const client = createClient();
@@ -528,7 +628,9 @@ describe('CollabGateway', () => {
 
       expect(result).toEqual({ joined: true, participants: ['socket_2'] });
       expect(client.to).toHaveBeenCalledWith('file:f1');
-      expect(client.emit).toHaveBeenCalledWith('voice-user-joined', { socketId: 'socket_1' });
+      expect(client.emit).toHaveBeenCalledWith('voice-user-joined', {
+        socketId: 'socket_1',
+      });
     });
 
     it('rejects with reason "no-access" when the caller lacks VIEWER-or-above access', async () => {
@@ -543,16 +645,24 @@ describe('CollabGateway', () => {
     it('rejects with reason "no-access" when fileId is missing or not a non-empty string, without querying access', async () => {
       const client = createClient();
 
-      const result = await gateway.handleJoinVoice(client, { fileId: '' } as any);
+      const result = await gateway.handleJoinVoice(client, {
+        fileId: '',
+      });
 
       expect(result).toEqual({ joined: false, reason: 'no-access' });
       expect(filesServiceMock.getAccess).not.toHaveBeenCalled();
     });
 
     it('rejects with reason "full" once the roster already has 6 members, without adding the caller or broadcasting', async () => {
-      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      filesServiceMock.getAccess.mockResolvedValue({
+        role: 'VIEWER',
+        file: { id: 'f1' },
+      });
       for (let i = 0; i < 6; i++) {
-        const c = createClient({ userId: `clerk_${i}`, localUserId: `local_${i}` });
+        const c = createClient({
+          userId: `clerk_${i}`,
+          localUserId: `local_${i}`,
+        });
         c.id = `socket_full_${i}`;
         await gateway.handleJoinVoice(c, { fileId: 'f1' });
       }
@@ -566,14 +676,19 @@ describe('CollabGateway', () => {
     });
 
     it('leave-voice removes the caller from the roster and broadcasts voice-user-left', async () => {
-      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      filesServiceMock.getAccess.mockResolvedValue({
+        role: 'VIEWER',
+        file: { id: 'f1' },
+      });
       const client = createClient();
       await gateway.handleJoinVoice(client, { fileId: 'f1' });
 
       await gateway.handleLeaveVoice(client, { fileId: 'f1' });
 
       expect(client.to).toHaveBeenCalledWith('file:f1');
-      expect(client.emit).toHaveBeenCalledWith('voice-user-left', { socketId: 'socket_1' });
+      expect(client.emit).toHaveBeenCalledWith('voice-user-left', {
+        socketId: 'socket_1',
+      });
 
       const other = createClient({ userId: 'clerk_2', localUserId: 'local_2' });
       other.id = 'socket_2';
@@ -581,7 +696,7 @@ describe('CollabGateway', () => {
       expect(result).toEqual({ joined: true, participants: [] });
     });
 
-    it('leave-voice is a no-op (no broadcast) when the caller was never in that file\'s roster', async () => {
+    it("leave-voice is a no-op (no broadcast) when the caller was never in that file's roster", async () => {
       const client = createClient();
 
       await expect(
@@ -593,9 +708,15 @@ describe('CollabGateway', () => {
 
   describe('voice-signal', () => {
     it('relays a signal only to a target socket currently in the voice roster, via server.to (not client.to)', async () => {
-      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      filesServiceMock.getAccess.mockResolvedValue({
+        role: 'VIEWER',
+        file: { id: 'f1' },
+      });
       gateway.server = createServerMock([]);
-      const target = createClient({ userId: 'clerk_2', localUserId: 'local_2' });
+      const target = createClient({
+        userId: 'clerk_2',
+        localUserId: 'local_2',
+      });
       target.id = 'socket_2';
       await gateway.handleJoinVoice(target, { fileId: 'f1' });
       const client = createClient();
@@ -614,7 +735,10 @@ describe('CollabGateway', () => {
     });
 
     it("drops silently when targetSocketId is not currently in that file's voice roster", async () => {
-      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      filesServiceMock.getAccess.mockResolvedValue({
+        role: 'VIEWER',
+        file: { id: 'f1' },
+      });
       gateway.server = createServerMock([]);
       const client = createClient();
 
@@ -657,10 +781,16 @@ describe('CollabGateway', () => {
 
   describe('voice-mute-changed', () => {
     it('broadcasts mute state volatile to the room (excluding sender) at VIEWER floor', async () => {
-      filesServiceMock.getAccess.mockResolvedValue({ role: 'VIEWER', file: { id: 'f1' } });
+      filesServiceMock.getAccess.mockResolvedValue({
+        role: 'VIEWER',
+        file: { id: 'f1' },
+      });
       const client = createClient();
 
-      await gateway.handleVoiceMuteChanged(client, { fileId: 'f1', muted: true });
+      await gateway.handleVoiceMuteChanged(client, {
+        fileId: 'f1',
+        muted: true,
+      });
 
       expect(client.volatile.to).toHaveBeenCalledWith('file:f1');
       expect(client.emit).toHaveBeenCalledWith('voice-mute-changed', {
@@ -673,7 +803,10 @@ describe('CollabGateway', () => {
       filesServiceMock.getAccess.mockResolvedValue(null);
       const client = createClient();
 
-      await gateway.handleVoiceMuteChanged(client, { fileId: 'f1', muted: true });
+      await gateway.handleVoiceMuteChanged(client, {
+        fileId: 'f1',
+        muted: true,
+      });
 
       expect(client.emit).not.toHaveBeenCalled();
     });

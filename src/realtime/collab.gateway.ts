@@ -66,6 +66,33 @@ export class CollabGateway implements OnGatewayConnection {
   // instead of) this in-process Map.
   private readonly voiceRosters = new Map<string, Set<string>>();
 
+  // fileId -> clientSessionId -> that tab's current socket.id. clientSessionId
+  // is a random id the frontend mints once per tab (sessionStorage, not
+  // localStorage — see hooks/file-socket-context.tsx) and replays on every
+  // (re)connect. It's how join-room below tells "this same tab reconnected
+  // with a new socket.id" (evict the stale one right away) apart from "a
+  // second tab/device joined" (both are legitimate, keep both) — without it,
+  // a mobile client that drops network and silently reconnects leaves its
+  // old socket's cursor stuck in the room until Socket.IO's own ping-timeout
+  // (up to ~45s) notices the dead connection, showing two presences for the
+  // same person in the meantime. Same in-process-only caveat as
+  // voiceRosters above: not mirrored through Redis, so this fileId's two
+  // sockets must land on the same node to be deduped — acceptable for the
+  // same reason it's acceptable there.
+  private readonly activeSessionsByFile = new Map<
+    string,
+    Map<string, string>
+  >();
+
+  private activeSessions(fileId: string): Map<string, string> {
+    let sessions = this.activeSessionsByFile.get(fileId);
+    if (!sessions) {
+      sessions = new Map();
+      this.activeSessionsByFile.set(fileId, sessions);
+    }
+    return sessions;
+  }
+
   constructor(
     private readonly filesService: FilesService,
     private readonly chatService: ChatService,
@@ -147,6 +174,23 @@ export class CollabGateway implements OnGatewayConnection {
     }
 
     await client.join(room);
+
+    const clientSessionId = client.handshake.auth?.clientSessionId as
+      string | undefined;
+    if (clientSessionId) {
+      const sessions = this.activeSessions(body.fileId);
+      const staleSocketId = sessions.get(clientSessionId);
+      if (staleSocketId && staleSocketId !== client.id) {
+        // Force-close the previous socket for this same tab. `server.in`
+        // targets it by its own implicit per-socket room, which — unlike
+        // reaching into the in-process socket registry — works through the
+        // Redis adapter even if the stale socket landed on a different
+        // node. This fires 'disconnecting' on it, so notifyRoomsOnLeave
+        // still runs and broadcasts its departure/voice cleanup normally.
+        this.server.in(staleSocketId).disconnectSockets(true);
+      }
+      sessions.set(clientSessionId, client.id);
+    }
 
     const collaborators = await this.roomCollaborators(room);
     client.to(room).emit('room-user-change', { collaborators });
@@ -244,7 +288,8 @@ export class CollabGateway implements OnGatewayConnection {
   @SubscribeMessage('send-chat-message')
   async handleSendChatMessage(
     @ConnectedSocket() client: CollabSocket,
-    @MessageBody() body: { fileId: string; body: string; mentionedUserIds?: string[] },
+    @MessageBody()
+    body: { fileId: string; body: string; mentionedUserIds?: string[] },
   ) {
     if (!isValidFileId(body?.fileId)) {
       return;
@@ -254,7 +299,12 @@ export class CollabGateway implements OnGatewayConnection {
     }
 
     const message = await this.chatService
-      .create(body.fileId, client.data.localUserId, body.body, body.mentionedUserIds ?? [])
+      .create(
+        body.fileId,
+        client.data.localUserId,
+        body.body,
+        body.mentionedUserIds ?? [],
+      )
       .catch((err) => {
         this.logger.warn(
           `send-chat-message dropped for file ${body.fileId}: ${(err as Error).message}`,
@@ -309,7 +359,9 @@ export class CollabGateway implements OnGatewayConnection {
     // returned list.
     const participants = Array.from(roster);
     roster.add(client.id);
-    client.to(fileRoom(body.fileId)).emit('voice-user-joined', { socketId: client.id });
+    client
+      .to(fileRoom(body.fileId))
+      .emit('voice-user-joined', { socketId: client.id });
 
     return { joined: true, participants };
   }
@@ -327,14 +379,17 @@ export class CollabGateway implements OnGatewayConnection {
     if (!roster?.delete(client.id)) {
       return;
     }
-    client.to(fileRoom(body.fileId)).emit('voice-user-left', { socketId: client.id });
+    client
+      .to(fileRoom(body.fileId))
+      .emit('voice-user-left', { socketId: client.id });
   }
 
   @UseGuards(WsClerkGuard, WsLocalUserGuard)
   @SubscribeMessage('voice-signal')
   async handleVoiceSignal(
     @ConnectedSocket() client: CollabSocket,
-    @MessageBody() body: { fileId: string; targetSocketId: string; signal: unknown },
+    @MessageBody()
+    body: { fileId: string; targetSocketId: string; signal: unknown },
   ) {
     if (!isValidFileId(body?.fileId)) {
       return;
@@ -400,6 +455,21 @@ export class CollabGateway implements OnGatewayConnection {
       const voiceRoster = this.voiceRosters.get(fileId);
       if (voiceRoster?.delete(client.id)) {
         client.to(room).emit('voice-user-left', { socketId: client.id });
+      }
+
+      // Only remove this session's mapping if it still points at the
+      // disconnecting socket — join-room's eviction already overwrote it
+      // with the new socket.id before this stale socket's 'disconnecting'
+      // fires (see handleJoinRoom), so this only ever clears the entry for
+      // a socket that's actually going away for good.
+      const sessions = this.activeSessionsByFile.get(fileId);
+      if (sessions) {
+        for (const [sessionId, socketId] of sessions) {
+          if (socketId === client.id) {
+            sessions.delete(sessionId);
+            break;
+          }
+        }
       }
     }
   }
