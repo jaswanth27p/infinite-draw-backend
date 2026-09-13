@@ -16,6 +16,7 @@ import { VoiceModule } from './voice/voice.module';
 import { CreditsModule } from './credits/credits.module';
 import { AiDiagramModule } from './ai-diagram/ai-diagram.module';
 import { UsersModule } from './users/users.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { UsersModule } from './users/users.module';
     CreditsModule,
     AiDiagramModule,
     UsersModule,
+    MetricsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
