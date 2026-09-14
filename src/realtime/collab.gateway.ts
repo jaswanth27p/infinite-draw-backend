@@ -14,7 +14,7 @@ import { WsLocalUserGuard } from './ws-local-user.guard';
 import { getCorsOrigins } from '../config/cors';
 import { FilesService } from '../files/files.service';
 import { Role, ROLE_RANK } from '../files/role';
-import { ChatService } from '../chat/chat.service';
+import { ChatService, MessagePayload } from '../chat/chat.service';
 
 type AccessCacheEntry = { role: Role | null; expiresAt: number };
 
@@ -290,12 +290,18 @@ export class CollabGateway implements OnGatewayConnection {
     @ConnectedSocket() client: CollabSocket,
     @MessageBody()
     body: { fileId: string; body: string; mentionedUserIds?: string[] },
-  ) {
+  ): Promise<
+    | { ok: true; message: MessagePayload }
+    | { ok: false; reason: 'invalid' | 'no-access' | 'send-failed' }
+  > {
     if (!isValidFileId(body?.fileId)) {
-      return;
+      return { ok: false, reason: 'invalid' };
     }
+    // Explicit ack on failure (not a bare `return`) so the client can tell
+    // "you're not allowed to chat here" apart from a dropped/lost message
+    // instead of the send silently no-op'ing from the sender's point of view.
     if (!(await this.hasFloor(client, body.fileId, 'COMMENTER'))) {
-      return;
+      return { ok: false, reason: 'no-access' };
     }
 
     const message = await this.chatService
@@ -312,7 +318,7 @@ export class CollabGateway implements OnGatewayConnection {
         return null;
       });
     if (!message) {
-      return;
+      return { ok: false, reason: 'send-failed' };
     }
 
     // Sender excluded, like every other handler in this gateway: the
@@ -330,7 +336,7 @@ export class CollabGateway implements OnGatewayConnection {
     // this (not a broadcast) to learn which message ids are its own,
     // since a client has no other way to resolve "my local user id"
     // client-side.
-    return message;
+    return { ok: true, message };
   }
 
   @UseGuards(WsClerkGuard, WsLocalUserGuard)

@@ -524,7 +524,7 @@ describe('CollabGateway', () => {
       expect(client.to).toHaveBeenCalledWith('file:f1');
       expect(client.emit).toHaveBeenCalledWith('chat-message', message);
       expect(gateway.server.to).not.toHaveBeenCalled();
-      expect(result).toEqual(message);
+      expect(result).toEqual({ ok: true, message });
     });
 
     it('forwards mentionedUserIds through to ChatService.create when provided', async () => {
@@ -550,7 +550,7 @@ describe('CollabGateway', () => {
       );
     });
 
-    it('handleSendChatMessage rejects a VIEWER (below COMMENTER floor)', async () => {
+    it('handleSendChatMessage rejects a VIEWER (below COMMENTER floor) with an explicit no-access ack', async () => {
       filesServiceMock.getAccess.mockResolvedValue({
         role: 'VIEWER',
         file: { id: 'f1' },
@@ -558,16 +558,20 @@ describe('CollabGateway', () => {
       gateway.server = createServerMock([]);
       const client = createClient();
 
-      await gateway.handleSendChatMessage(client, { fileId: 'f1', body: 'hi' });
+      const result = await gateway.handleSendChatMessage(client, {
+        fileId: 'f1',
+        body: 'hi',
+      });
 
       expect(chatServiceMock.create).not.toHaveBeenCalled();
+      expect(result).toEqual({ ok: false, reason: 'no-access' });
     });
 
-    it('silently drops when fileId is missing or not a non-empty string', async () => {
+    it('returns an explicit invalid ack when fileId is missing or not a non-empty string', async () => {
       gateway.server = createServerMock([]);
       const client = createClient();
 
-      await gateway.handleSendChatMessage(client, {
+      const result = await gateway.handleSendChatMessage(client, {
         fileId: '',
         body: 'hi',
       });
@@ -575,20 +579,25 @@ describe('CollabGateway', () => {
       expect(filesServiceMock.getAccess).not.toHaveBeenCalled();
       expect(chatServiceMock.create).not.toHaveBeenCalled();
       expect(gateway.server.emit).not.toHaveBeenCalled();
+      expect(result).toEqual({ ok: false, reason: 'invalid' });
     });
 
-    it('silently drops when the caller has no access at all', async () => {
+    it('returns an explicit no-access ack when the caller has no access at all', async () => {
       filesServiceMock.getAccess.mockResolvedValue(null);
       gateway.server = createServerMock([]);
       const client = createClient();
 
-      await gateway.handleSendChatMessage(client, { fileId: 'f1', body: 'hi' });
+      const result = await gateway.handleSendChatMessage(client, {
+        fileId: 'f1',
+        body: 'hi',
+      });
 
       expect(chatServiceMock.create).not.toHaveBeenCalled();
       expect(gateway.server.emit).not.toHaveBeenCalled();
+      expect(result).toEqual({ ok: false, reason: 'no-access' });
     });
 
-    it('drops silently (no throw) when ChatService.create rejects validation', async () => {
+    it('returns an explicit send-failed ack (no throw) when ChatService.create rejects validation', async () => {
       filesServiceMock.getAccess.mockResolvedValue({
         role: 'COMMENTER',
         file: { id: 'f1' },
@@ -604,7 +613,7 @@ describe('CollabGateway', () => {
         body: '   ',
       });
 
-      expect(result).toBeUndefined();
+      expect(result).toEqual({ ok: false, reason: 'send-failed' });
       expect(gateway.server.emit).not.toHaveBeenCalled();
     });
   });
